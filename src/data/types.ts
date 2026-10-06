@@ -34,7 +34,8 @@ export interface Well {
   role: WellRole;
   label?: string;
   ladderId?: string; // when role === 'ladder'
-  panelId?: string; // expected-band panel, when role === 'sample'
+  panelId?: string; // expected-band panel, when role === 'sample' (Stage 3)
+  expected?: number[]; // expected band sizes typed in by the user
   controlKind?: 'positive' | 'negative' | 'ntc';
 }
 

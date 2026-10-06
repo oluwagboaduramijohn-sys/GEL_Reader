@@ -23,8 +23,8 @@ calibrate against the ladder → sizes, panel calls and export
 | # | Stage | Scope | Status |
 |---|---|---|---|
 | 0 | Setup | Project scaffold, data model, ladder library | ✅ |
-| 1 | Foundation | Upload; crop and rotate; contrast and invert; gel type; well map (wells, rows, roles, labels); ladder picker; **manual ruler** (click bands); calibration curve (log size vs migration, Rf for protein); band sizes with ranges; CSV export; gel % input with resolving-range warnings; ladder labels and read-across line (guided layer) | ⏳ next |
-| 2 | Auto-detection | Lane and band detection guided by the well map; everything stays editable | |
+| 1 | Foundation | Upload; crop and rotate; contrast and invert; gel type; well map (wells, rows, roles, labels); ladder picker; **manual ruler** (click bands); calibration curve (log size vs migration distance; protein uses the same per-gel curve, Rf only needed to compare across gels); band sizes with ranges; CSV export; gel % input with resolving-range warnings; ladder labels and read-across line (guided layer); expected-size check per sample; automatic band detection (pulled forward from Stage 2) | ✅ |
+| 2 | Auto-detection | Basic lane fitting and band detection already in Stage 1. Remaining: tune on real photos, multi-ladder smile correction, smarter well-line finding | ⏳ next |
 | 3 | Expected-band panels | Multiplex and allele panels; ±% matching; genotype calls; internal-control check; unexpected bands flagged; splitting close or overlapping peaks | |
 | 4 | Bad photos | Perspective (4-corner) correction; curved/smiling lanes; blur and quality score; overexposure warnings; background subtraction | |
 | 5 | Polish | Custom ladder upload; annotated image and PDF report; band quantification (ng); saved projects and well-map templates | |

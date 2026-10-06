@@ -1,0 +1,62 @@
+// Grayscale analysis image: values 0..1, bands bright on a dark background.
+
+export interface GrayImage {
+  width: number;
+  height: number;
+  data: Float32Array;
+}
+
+export function toGray(img: { width: number; height: number; data: Uint8ClampedArray }): GrayImage {
+  const out = new Float32Array(img.width * img.height);
+  for (let i = 0; i < out.length; i++) {
+    const r = img.data[i * 4];
+    const g = img.data[i * 4 + 1];
+    const b = img.data[i * 4 + 2];
+    out[i] = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  }
+  return { width: img.width, height: img.height, data: out };
+}
+
+function percentile(data: Float32Array, p: number) {
+  // histogram is plenty precise for display stretching
+  const bins = new Uint32Array(1024);
+  for (const v of data) bins[Math.min(1023, Math.max(0, Math.floor(v * 1023)))]++;
+  const target = (p / 100) * data.length;
+  let acc = 0;
+  for (let i = 0; i < 1024; i++) {
+    acc += bins[i];
+    if (acc >= target) return i / 1023;
+  }
+  return 1;
+}
+
+/** Light background (Coomassie, dark-on-light photos) means we should invert. */
+export function looksLightBackground(gray: GrayImage) {
+  return percentile(gray.data, 50) > 0.5;
+}
+
+export interface ToneSettings {
+  invert: boolean;
+  contrast: number; // 0..1, how aggressively to clip the histogram ends
+}
+
+/** Invert if needed and stretch so background ≈ 0 and the brightest bands ≈ 1. */
+export function applyTone(gray: GrayImage, tone: ToneSettings): GrayImage {
+  const src = tone.invert ? gray.data.map((v) => 1 - v) : gray.data;
+  const lo = percentile(src, 1 + tone.contrast * 49);
+  const hi = percentile(src, 99.9 - tone.contrast * 4.9);
+  const span = Math.max(hi - lo, 1e-3);
+  const out = new Float32Array(src.length);
+  for (let i = 0; i < src.length; i++) out[i] = Math.min(1, Math.max(0, (src[i] - lo) / span));
+  return { width: gray.width, height: gray.height, data: out };
+}
+
+export function grayToRGBA(gray: GrayImage): Uint8ClampedArray<ArrayBuffer> {
+  const out = new Uint8ClampedArray(gray.width * gray.height * 4);
+  for (let i = 0; i < gray.data.length; i++) {
+    const v = gray.data[i] * 255;
+    out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = v;
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
