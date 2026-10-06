@@ -76,6 +76,13 @@ export interface Peak {
   index: number; // position in the profile (sub-pixel)
   height: number; // background-corrected intensity
   prominence: number;
+  brightness: number; // height above the lane's darkest parts; comparable between crowded and isolated bands
+}
+
+/** Typical background level of a lane: its 10th-percentile brightness. */
+export function laneFloor(p: Float32Array) {
+  const sorted = Array.from(p).sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length * 0.1)] ?? 0;
 }
 
 export interface PeakOptions {
@@ -100,6 +107,7 @@ export function findPeaks(raw: Float32Array, opts: PeakOptions = {}): Peak[] {
   const max = p.reduce((a, b) => Math.max(a, b), 0);
   const threshold = Math.max(noise * (6 - 5 * sensitivity), max * (0.12 - 0.11 * sensitivity), 1e-4);
 
+  const floor = laneFloor(smooth);
   const window = Math.max(minSep * 3, Math.round(n / 10));
   const candidates: Peak[] = [];
   for (let i = 1; i < n - 1; i++) {
@@ -119,7 +127,12 @@ export function findPeaks(raw: Float32Array, opts: PeakOptions = {}): Peak[] {
     // parabolic refinement to sub-pixel position
     const denom = p[i - 1] - 2 * p[i] + p[i + 1];
     const offset = denom !== 0 ? (0.5 * (p[i - 1] - p[i + 1])) / denom : 0;
-    candidates.push({ index: i + Math.max(-0.5, Math.min(0.5, offset)), height: p[i], prominence });
+    candidates.push({
+      index: i + Math.max(-0.5, Math.min(0.5, offset)),
+      height: p[i],
+      prominence,
+      brightness: smooth[i] - floor,
+    });
   }
 
   // keep the stronger peak when two are too close

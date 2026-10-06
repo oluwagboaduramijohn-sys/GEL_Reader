@@ -15,13 +15,13 @@ const band = (laneKey: string, size: number, ladderSize?: number): Band => ({
 
 function project(expected: number[], sampleBands: number[]): Project {
   const p = newProject('dna');
-  const wells = makeWells(1, 2, [], 'transgen-100bp-plus');
+  const wells = makeWells([2], [], 'transgen-100bp-plus');
   wells[1].expected = expected;
   const ladder = [1500, 1000, 700, 500, 300, 200, 100];
   return {
     ...p,
     gelPercent: '2.0',
-    wellsPerRow: 2,
+    rowWells: [2],
     wells,
     laneX: { '1-1': 50, '1-2': 150 },
     bands: [...ladder.map((s) => band('1-1', s, s)), ...sampleBands.map((s) => band('1-2', s))],

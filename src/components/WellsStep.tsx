@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { DEFAULT_GEL_PERCENT, GEL_PERCENT_OPTIONS, resolvingRange, suggestPercent } from '../data/gelRanges'
 import { laddersFor } from '../data/ladders'
 import { UNITS, type GelType, type Well, type WellRole } from '../data/types'
-import { laneKey, makeWells, type Project } from '../lib/project'
+import { laneKey, makeWells, rowCount, type Project } from '../lib/project'
 
 interface Props {
   project: Project
@@ -36,10 +36,14 @@ export function WellsStep({ project, setProject, guided, clearGeometry }: Props)
       bands: 'role' in patch || 'ladderId' in patch ? p.bands.map((b) => (b.laneKey === key ? { ...b, ladderSize: undefined } : b)) : p.bands,
     }))
 
-  const setLayout = (rows: number, perRow: number) =>
-    setProject((p) =>
-      clearGeometry({ ...p, rows, wellsPerRow: perRow, wells: makeWells(rows, perRow, p.wells, laddersFor(p.gelType)[0]?.id) }),
-    )
+  const rows = rowCount(project)
+  const [sameCount, setSameCount] = useState(project.rowWells.every((n) => n === project.rowWells[0]))
+
+  const setLayout = (rowWells: number[]) =>
+    setProject((p) => clearGeometry({ ...p, rowWells, wells: makeWells(rowWells, p.wells, laddersFor(p.gelType)[0]?.id) }))
+  const clampWells = (v: string) => Math.min(30, Math.max(1, Math.round(+v) || 1))
+  const setRows = (n: number) =>
+    setLayout(Array.from({ length: n }, (_, r) => project.rowWells[r] ?? project.rowWells[project.rowWells.length - 1]))
 
   const setGelType = (gelType: GelType) =>
     setProject((p) => ({
@@ -96,14 +100,51 @@ export function WellsStep({ project, setProject, guided, clearGeometry }: Props)
           <h3>Wells</h3>
           <div className="row">
             <label className="field">
-              Wells per row
-              <input type="number" min={1} max={30} value={project.wellsPerRow} onChange={(e) => setLayout(project.rows, Math.min(30, Math.max(1, +e.target.value || 1)))} />
+              Rows of wells (combs)
+              <select value={rows} onChange={(e) => setRows(+e.target.value)}>
+                {[1, 2, 3, 4].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
             </label>
-            <label className="field">
-              Rows (combs)
-              <input type="number" min={1} max={4} value={project.rows} onChange={(e) => setLayout(Math.min(4, Math.max(1, +e.target.value || 1)), project.wellsPerRow)} />
-            </label>
+            {sameCount && (
+              <label className="field">
+                Wells per row
+                <input type="number" min={1} max={30} value={project.rowWells[0]} onChange={(e) => setLayout(project.rowWells.map(() => clampWells(e.target.value)))} />
+              </label>
+            )}
           </div>
+          {rows > 1 && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={sameCount}
+                onChange={(e) => {
+                  setSameCount(e.target.checked)
+                  if (e.target.checked) setLayout(project.rowWells.map(() => project.rowWells[0]))
+                }}
+              />
+              Every row has the same number of wells
+            </label>
+          )}
+          {!sameCount && (
+            <div className="row">
+              {project.rowWells.map((n, r) => (
+                <label key={r} className="field">
+                  Row {r + 1}
+                  <input type="number" min={1} max={30} value={n} onChange={(e) => setLayout(project.rowWells.map((m, i) => (i === r ? clampWells(e.target.value) : m)))} />
+                </label>
+              ))}
+            </div>
+          )}
+          {rows > 1 && guided && (
+            <p className="muted small">
+              Each row of wells acts like its own small gel. Best practice is a ladder in every row; if a row has
+              none, the tool borrows the nearest row's ladder, which is less exact.
+            </p>
+          )}
           <label className="field">
             Expected-size match window: ±{project.tolerancePct}%
             <input type="range" min={2} max={20} step={1} value={project.tolerancePct} onChange={(e) => setProject((p) => ({ ...p, tolerancePct: +e.target.value }))} />
@@ -113,9 +154,9 @@ export function WellsStep({ project, setProject, guided, clearGeometry }: Props)
 
       <h3>Well map</h3>
       <p className="muted small">Click a well to say what is in it.</p>
-      {Array.from({ length: project.rows }, (_, r) => (
+      {Array.from({ length: rows }, (_, r) => (
         <div key={r} className="wellrow">
-          {project.rows > 1 && <span className="rowlabel">Row {r + 1}</span>}
+          {rows > 1 && <span className="rowlabel">Row {r + 1}</span>}
           {project.wells
             .filter((w) => w.row === r + 1)
             .map((w) => (
@@ -133,10 +174,12 @@ export function WellsStep({ project, setProject, guided, clearGeometry }: Props)
       ))}
       <div className="legend small muted">L = ladder · S = sample · C = control · — = empty</div>
 
+      <QuickSetup project={project} setProject={setProject} ladderId={ladders[0]?.id} unit={unit} />
+
       {well && (
         <div className="welledit">
           <h3>
-            {project.rows > 1 ? `Row ${well.row}, ` : ''}Well {well.index}
+            {rows > 1 ? `Row ${well.row}, ` : ''}Well {well.index}
           </h3>
           <div className="segmented">
             {(Object.keys(ROLE_LABEL) as WellRole[]).map((r) => (
@@ -236,5 +279,94 @@ function LadderPreview({ ladderId, gelType, range }: { ladderId: string; gelType
       </div>
       {ladder.bands.some((b) => b.reference) && <div className="small muted">★ brighter reference band: a good place to start reading.</div>}
     </div>
+  )
+}
+
+/** Bulk tools so a 4 × 20 gel doesn't take 80 clicks. */
+function QuickSetup({
+  project,
+  setProject,
+  ladderId,
+  unit,
+}: {
+  project: Project
+  setProject: Props['setProject']
+  ladderId?: string
+  unit: string
+}) {
+  const [names, setNames] = useState('')
+  const [sizes, setSizes] = useState('')
+  const [note, setNote] = useState<string>()
+  const total = project.wells.length
+
+  const ladderAt = (ends: 'first' | 'both') =>
+    setProject((p) => ({
+      ...p,
+      wells: p.wells.map((w) => {
+        const last = p.rowWells[w.row - 1]
+        const isLadder = w.index === 1 || (ends === 'both' && w.index === last && last > 1)
+        if (isLadder) return { ...w, role: 'ladder', ladderId: w.ladderId ?? ladderId }
+        return w.role === 'ladder' ? { ...w, role: 'sample', ladderId: undefined } : w
+      }),
+      bands: p.bands.map((b) => ({ ...b, ladderSize: undefined })),
+    }))
+
+  const applyNames = () => {
+    const list = names.replace(/\r/g, '').split(/\n|\t/)
+    while (list.length && !list[list.length - 1].trim()) list.pop()
+    const targets = project.wells.filter((w) => w.role === 'sample' || w.role === 'control')
+    setProject((p) => {
+      let i = 0
+      return {
+        ...p,
+        wells: p.wells.map((w) => {
+          if (w.role !== 'sample' && w.role !== 'control') return w
+          const name = list[i++]?.trim()
+          return name === undefined ? w : { ...w, label: name || undefined }
+        }),
+      }
+    })
+    setNote(
+      list.length > targets.length
+        ? `Only ${targets.length} sample/control wells, so the last ${list.length - targets.length} names were not used.`
+        : `Named ${Math.min(list.length, targets.length)} wells.`,
+    )
+  }
+
+  const applySizes = () => {
+    const parsed = parseSizes(sizes)
+    setProject((p) => ({
+      ...p,
+      wells: p.wells.map((w) => (w.role === 'sample' ? { ...w, expected: parsed.length ? parsed : undefined } : w)),
+    }))
+    setNote(parsed.length ? `Every sample now expects ${parsed.join(', ')} ${unit}.` : 'Cleared expected sizes from every sample.')
+  }
+
+  return (
+    <details className="quick" open={total > 16}>
+      <summary>
+        <strong>Quick setup</strong> <span className="muted small">for big gels</span>
+      </summary>
+      <div className="row">
+        <button onClick={() => ladderAt('first')}>Ladder in the first well of every row</button>
+        <button onClick={() => ladderAt('both')}>Ladder in the first and last well of every row</button>
+      </div>
+      <label className="field">
+        Sample names, in well order (row 1 left to right, then row 2…). Paste a column from Excel; ladder and empty
+        wells are skipped.
+        <textarea rows={4} value={names} onChange={(e) => setNames(e.target.value)} placeholder={'Mouse 1\nMouse 2\nMouse 3'} />
+      </label>
+      <button disabled={!names.trim()} onClick={applyNames}>
+        Fill in names
+      </button>
+      <label className="field">
+        Same expected size(s) for every sample ({unit})
+        <div className="row">
+          <input value={sizes} placeholder="e.g. 320, 210" onChange={(e) => setSizes(e.target.value)} />
+          <button onClick={applySizes}>Apply to all samples</button>
+        </div>
+      </label>
+      {note && <p className="hint small">{note}</p>}
+    </details>
   )
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { UNITS } from '../data/types'
 import { autoLanes, detectBands, laneAt, manualBand, relabelLadders, rowSpan } from '../lib/detect'
 import { grayToRGBA, type GrayImage } from '../lib/image'
-import { formatSize, ladderFor, laneKey, wellName, type BandResult, type LaneResult, type Project } from '../lib/project'
+import { formatSize, ladderFor, laneKey, rowCount, wellName, type BandResult, type LaneResult, type Project } from '../lib/project'
 import { drawPixels } from '../lib/transform'
 import { svgPoint } from './svgPoint'
 
@@ -112,7 +112,7 @@ export function AnalyzeStep({ img, project, setProject, results, guided }: Props
         const band = manualBand(project, img, well.row, well.index, p.y)
         setProject((pr) => {
           let bands = [...pr.bands, band]
-          if (well.role === 'ladder') bands = relabelLadders(pr, bands, laneKey(well))
+          if (well.role === 'ladder') bands = relabelLadders(pr, bands, laneKey(well), H)
           return { ...pr, bands }
         })
         setSelectedId(band.id)
@@ -180,7 +180,7 @@ export function AnalyzeStep({ img, project, setProject, results, guided }: Props
                 <line x1={0} x2={W} y1={y} y2={y} />
                 <line className="hit" x1={0} x2={W} y1={y} y2={y} />
                 <text x={4} y={y - 4} fontSize={fs * 0.8}>
-                  {project.rows > 1 ? `Row ${i + 1} wells` : 'Wells'} (drag to the well line)
+                  {rowCount(project) > 1 ? `Row ${i + 1} wells` : 'Wells'} (drag to the well line)
                 </text>
               </g>
             ))}
@@ -267,7 +267,7 @@ export function AnalyzeStep({ img, project, setProject, results, guided }: Props
         </div>
         <label className="field">
           Lane width
-          <input type="range" min={3} max={Math.round(W / Math.max(2, project.wellsPerRow))} value={hw} onChange={(e) => setProject((p) => ({ ...p, laneHalfWidth: +e.target.value }))} />
+          <input type="range" min={3} max={Math.round(W / Math.max(2, ...project.rowWells))} value={hw} onChange={(e) => setProject((p) => ({ ...p, laneHalfWidth: +e.target.value }))} />
         </label>
 
         {selected ? (
@@ -283,7 +283,7 @@ export function AnalyzeStep({ img, project, setProject, results, guided }: Props
             <div key={l.key} className={`status ${l.calibration ? 'ok' : 'bad'}`}>
               <span aria-hidden>{l.calibration ? '✓' : '!'}</span>
               <div>
-                <strong>{wellName(l.well, project.rows)}</strong>: {ladderFor(l.well)?.name ?? 'no ladder chosen'}
+                <strong>{wellName(l.well, rowCount(project))}</strong>: {ladderFor(l.well)?.name ?? 'no ladder chosen'}
                 <div className="small">
                   {labeled} band{labeled === 1 ? '' : 's'} labelled
                   {l.calibration ? ` · fit quality R² = ${l.calibration.r2.toFixed(3)}` : ''}
@@ -318,7 +318,7 @@ function SelectedBand({
 
   return (
     <div className="card">
-      <div className="small muted">{wellName(lane.well, project.rows)}</div>
+      <div className="small muted">{wellName(lane.well, rowCount(project))}</div>
       {ladder ? (
         <label className="field">
           Ladder band size
@@ -358,6 +358,10 @@ function SelectedBand({
           {br.outsideGelRange && !est.extrapolated && (
             <p className="warn small">Outside the range a {project.gelPercent}% gel separates well, so the range is wider.</p>
           )}
+          {lane.borrowedFromRow && (
+            <p className="warn small">Sized with the ladder in row {lane.borrowedFromRow} (this row has none), so the range is wider.</p>
+          )}
+          {br.nearNextRow && <p className="warn small">This band is close to the next row of wells and may have run into it.</p>}
           {br.matchesExpected && <p className="good small">✓ Matches the expected {fmt(br.matchesExpected)} {unit}</p>}
         </>
       ) : (

@@ -26,7 +26,7 @@ type StepId = (typeof STEPS)[number]['id']
 
 function exampleProject(): Project {
   const p = newProject('dna')
-  const wells = makeWells(1, EXAMPLE_SPEC.lanes.length)
+  const wells = makeWells([EXAMPLE_SPEC.lanes.length])
   const setup: Partial<Project['wells'][number]>[] = [
     { role: 'ladder', ladderId: 'transgen-100bp-plus' },
     { role: 'sample', label: 'PCR clone 1', expected: [750] },
@@ -40,7 +40,7 @@ function exampleProject(): Project {
   return {
     ...p,
     gelPercent: '1.5',
-    wellsPerRow: wells.length,
+    rowWells: [wells.length],
     wells: wells.map((w, i) => ({ ...w, ...setup[i] })),
   }
 }

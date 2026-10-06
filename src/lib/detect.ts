@@ -2,35 +2,30 @@
 
 import type { GrayImage } from './image';
 import { suggestLadderSizes } from './ladderMatch';
-import { columnProfile, findPeaks, fitLaneGrid, laneProfile, snapToPeak } from './profile';
-import { ladderFor, laneKey, type Band, type Project } from './project';
+import { columnProfile, findPeaks, fitLaneGrid, laneFloor, laneProfile, snapToPeak } from './profile';
+import { ladderFor, laneKey, rowCount, rowSpan, type Band, type Project } from './project';
+
+export { rowSpan };
 
 let nextId = 1;
 export const bandId = () => `b${nextId++}`;
 
-/** Vertical extent of a comb row's lanes: from just below its wells to the next row (or the bottom). */
-export function rowSpan(project: Project, row: number, height: number) {
-  const top = project.rowTops[row - 1] ?? 0;
-  const next = project.rowTops[row];
-  const bottom = next !== undefined ? next - 4 : height - 1;
-  // skip the wells themselves, which are often bright
-  const start = top + Math.max(4, (bottom - top) * 0.02);
-  return { top, start, bottom };
-}
-
 /** Default well lines (evenly split rows) and lanes fitted to the image. */
 export function autoLanes(project: Project, img: GrayImage): Pick<Project, 'rowTops' | 'laneX' | 'laneHalfWidth'> {
+  const rows = rowCount(project);
   const rowTops =
-    project.rowTops.length === project.rows
+    project.rowTops.length === rows
       ? project.rowTops
-      : Array.from({ length: project.rows }, (_, r) => Math.round(((r + 0.06) * img.height) / project.rows));
+      : Array.from({ length: rows }, (_, r) => Math.round(((r + 0.06) * img.height) / rows));
   const laneX: Record<string, number> = {};
-  let spacing = img.width / project.wellsPerRow;
-  for (let row = 1; row <= project.rows; row++) {
-    const span = rowSpan({ ...project, rowTops }, row, img.height);
-    const grid = fitLaneGrid(columnProfile(img, span.start, span.bottom), project.wellsPerRow);
-    spacing = grid.spacing;
-    for (let index = 1; index <= project.wellsPerRow; index++) {
+  let spacing = Infinity;
+  for (let row = 1; row <= rows; row++) {
+    const count = project.rowWells[row - 1];
+    const span = rowSpan({ rowTops }, row, img.height);
+    const grid = fitLaneGrid(columnProfile(img, span.start, span.bottom), count);
+    // one lane width for the whole gel: fit the most tightly packed row
+    spacing = Math.min(spacing, count > 1 ? grid.spacing : img.width / 2);
+    for (let index = 1; index <= count; index++) {
       laneX[laneKey({ row, index })] = grid.first + (index - 1) * grid.spacing;
     }
   }
@@ -67,16 +62,16 @@ export function detectBands(project: Project, img: GrayImage, sensitivity: numbe
       laneKey: key,
       y: p.index + span.start,
       source: 'auto',
-      intensity: p.height,
+      intensity: p.brightness,
     }));
 
     found.push(...bands);
   }
-  return relabelLadders(project, [...kept, ...found]);
+  return relabelLadders(project, [...kept, ...found], undefined, img.height);
 }
 
 /** Suggest ladder sizes for every ladder lane, leaving sizes the user picked alone. */
-export function relabelLadders(project: Project, bands: Band[], onlyLane?: string): Band[] {
+export function relabelLadders(project: Project, bands: Band[], onlyLane?: string, imageHeight?: number): Band[] {
   const out = bands.map((b) => ({ ...b }));
   for (const well of project.wells) {
     const key = laneKey(well);
@@ -85,9 +80,11 @@ export function relabelLadders(project: Project, bands: Band[], onlyLane?: strin
     const lane = out.filter((b) => b.laneKey === key);
     const locked = new Set(lane.filter((b) => b.sizeLocked).map((b) => b.ladderSize));
     const free = lane.filter((b) => !b.sizeLocked);
+    const span = rowSpan(project, well.row, Infinity);
     const sizes = suggestLadderSizes(
       free,
       ladder.bands.filter((lb) => !locked.has(lb.size)),
+      { top: span.start, bottom: project.rowTops[well.row] !== undefined ? span.bottom : (imageHeight ?? Infinity) },
     );
     free.forEach((b, i) => {
       b.ladderSize = sizes[i];
@@ -101,7 +98,8 @@ export function manualBand(project: Project, img: GrayImage, row: number, index:
   const { key, span, profile } = profileFor(project, img, row, index);
   const snapped = snapToPeak(profile, y - span.start) + span.start;
   const i = Math.round(snapped - span.start);
-  return { id: bandId(), laneKey: key, y: snapped, source: 'manual', intensity: profile[i] ?? 0 };
+  const intensity = (profile[i] ?? 0) - laneFloor(profile);
+  return { id: bandId(), laneKey: key, y: snapped, source: 'manual', intensity };
 }
 
 /** Which lane (if any) does an x position fall in? */

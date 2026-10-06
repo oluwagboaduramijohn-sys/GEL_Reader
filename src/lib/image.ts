@@ -77,14 +77,16 @@ export function looksLightBackground(gray: GrayImage) {
 
 export interface ToneSettings {
   invert: boolean;
-  contrast: number; // 0..1, how aggressively to clip the histogram ends
+  contrast: number; // 0..1, how hard to push the background towards black
 }
 
 /** Invert if needed and stretch so background ≈ 0 and the brightest bands ≈ 1. */
 export function applyTone(gray: GrayImage, tone: ToneSettings): GrayImage {
   const src = tone.invert ? gray.data.map((v) => 1 - v) : gray.data;
+  // contrast only pushes the background down; the top is left almost
+  // unclipped so bright bands keep their relative brightness
   const lo = percentile(src, 1 + tone.contrast * 49);
-  const hi = percentile(src, 99.9 - tone.contrast * 4.9);
+  const hi = percentile(src, 99.97);
   const span = Math.max(hi - lo, 1e-3);
   const out = new Float32Array(src.length);
   for (let i = 0; i < src.length; i++) out[i] = Math.min(1, Math.max(0, (src[i] - lo) / span));

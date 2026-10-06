@@ -18,8 +18,7 @@ export interface Band {
 export interface Project {
   gelType: GelType;
   gelPercent: string;
-  wellsPerRow: number;
-  rows: number;
+  rowWells: number[]; // number of wells in each comb row, top to bottom
   wells: Well[];
   tolerancePct: number; // expected-size match window
   // geometry, in analysis-image px
@@ -31,10 +30,12 @@ export interface Project {
 
 export const laneKey = (w: Pick<Well, 'row' | 'index'>) => `${w.row}-${w.index}`;
 
-export function makeWells(rows: number, perRow: number, old: Well[] = [], ladderId?: string): Well[] {
+export const rowCount = (p: Pick<Project, 'rowWells'>) => p.rowWells.length;
+
+export function makeWells(rowWells: number[], old: Well[] = [], ladderId?: string): Well[] {
   const wells: Well[] = [];
-  for (let row = 1; row <= rows; row++) {
-    for (let index = 1; index <= perRow; index++) {
+  for (let row = 1; row <= rowWells.length; row++) {
+    for (let index = 1; index <= rowWells[row - 1]; index++) {
       const prev = old.find((w) => w.row === row && w.index === index);
       wells.push(prev ?? (index === 1 ? { row, index, role: 'ladder', ladderId } : { row, index, role: 'sample' }));
     }
@@ -46,9 +47,8 @@ export function newProject(gelType: GelType = 'dna'): Project {
   return {
     gelType,
     gelPercent: DEFAULT_GEL_PERCENT[gelType],
-    wellsPerRow: 8,
-    rows: 1,
-    wells: makeWells(1, 8, [], LADDERS.find((l) => l.gelType === gelType)?.id),
+    rowWells: [8],
+    wells: makeWells([8], [], LADDERS.find((l) => l.gelType === gelType)?.id),
     tolerancePct: 10,
     rowTops: [],
     laneX: {},
@@ -61,12 +61,23 @@ export function ladderFor(well: Well): Ladder | undefined {
   return LADDERS.find((l) => l.id === well.ladderId);
 }
 
+/** Vertical extent of a comb row's lanes: from just below its wells to the next row (or the bottom). */
+export function rowSpan(project: Pick<Project, 'rowTops'>, row: number, height: number) {
+  const top = project.rowTops[row - 1] ?? 0;
+  const next = project.rowTops[row];
+  const bottom = next !== undefined ? next - 4 : height - 1;
+  // skip the wells themselves, which are often bright
+  const start = top + Math.max(4, (bottom - top) * 0.02);
+  return { top, start, bottom };
+}
+
 // ---------- results ----------
 
 export interface BandResult {
   band: Band;
   estimate?: Estimate;
   outsideGelRange: boolean;
+  nearNextRow: boolean; // may have run into the next comb row's wells
   matchesExpected?: number; // the expected size this band was matched to
 }
 
@@ -76,6 +87,7 @@ export interface LaneResult {
   bands: BandResult[];
   calibration?: Calibration; // own (ladder) or borrowed (sample)
   ladderKey?: string; // which ladder lane sized this lane
+  borrowedFromRow?: number; // set when that ladder is in a different comb row
   error?: string;
   expected: { size: number; found?: BandResult }[];
   unexpected: BandResult[];
@@ -111,6 +123,8 @@ export function analyse(project: Project): LaneResult[] {
       const own = ladderCals.get(key);
       let calibration: Calibration | undefined;
       let ladderKey: string | undefined;
+      let borrowedFromRow: number | undefined;
+      let shift = 0; // converts this row's positions into the ladder row's
       let error: string | undefined;
 
       if (own) {
@@ -118,30 +132,44 @@ export function analyse(project: Project): LaneResult[] {
         ladderKey = key;
         error = own.error;
       } else {
-        // nearest calibrated ladder in the same comb row
+        // nearest calibrated ladder: same comb row first, then the closest row.
+        // Every row runs for the same time, so distance from its own well line
+        // is comparable across rows (less exact, hence the wider range).
         const x = project.laneX[key] ?? 0;
-        let best: [string, number] | undefined;
+        let best: { key: string; rowGap: number; dx: number } | undefined;
         for (const [k, l] of ladderCals) {
-          if (l.row !== well.row || !l.cal) continue;
-          const d = Math.abs(l.x - x);
-          if (!best || d < best[1]) best = [k, d];
+          if (!l.cal) continue;
+          const cand = { key: k, rowGap: Math.abs(l.row - well.row), dx: Math.abs(l.x - x) };
+          if (!best || cand.rowGap < best.rowGap || (cand.rowGap === best.rowGap && cand.dx < best.dx)) best = cand;
         }
         if (best) {
-          ladderKey = best[0];
-          calibration = ladderCals.get(best[0])!.cal;
+          const ladder = ladderCals.get(best.key)!;
+          ladderKey = best.key;
+          calibration = ladder.cal;
+          if (ladder.row !== well.row) {
+            borrowedFromRow = ladder.row;
+            shift = rowSpan(project, ladder.row, Infinity).top - rowSpan(project, well.row, Infinity).top;
+          }
         } else {
-          error = 'No calibrated ladder in this row yet. Mark the ladder bands first.';
+          error = 'No calibrated ladder yet. Mark the ladder bands first.';
         }
       }
 
+      const isLastRow = well.row >= rowCount(project);
+      const span = rowSpan(project, well.row, Infinity);
       const bands: BandResult[] = bandsOf(key).map((band) => {
-        const estimate = calibration?.predict(band.y);
+        let estimate = calibration?.predict(band.y + shift);
+        if (estimate && borrowedFromRow) {
+          const errPct = Math.min(50, estimate.errPct * 1.5 + 3);
+          estimate = { ...estimate, errPct, low: estimate.size * (1 - errPct / 100), high: estimate.size * (1 + errPct / 100) };
+        }
         const size = own ? band.ladderSize : estimate?.size;
         return {
           band,
           estimate,
           // ladder sizes are known, so the warning only matters for samples
           outsideGelRange: !own && !!(range && size && (size < range.min || size > range.max)),
+          nearNextRow: !isLastRow && band.y > span.bottom - Math.max(6, (span.bottom - span.top) * 0.04),
         };
       });
 
@@ -166,7 +194,7 @@ export function analyse(project: Project): LaneResult[] {
       });
       const unexpected = expected.length ? bands.filter((b) => !taken.has(b)) : [];
 
-      return { key, well, bands, calibration, ladderKey, error, expected, unexpected };
+      return { key, well, bands, calibration, ladderKey, borrowedFromRow, error, expected, unexpected };
     });
 }
 
@@ -176,6 +204,7 @@ export function formatSize(size: number, gelType: GelType) {
 }
 
 export function wellName(well: Well, rows: number) {
+  // rows: how many comb rows the gel has (row numbers only shown when > 1)
   const base = rows > 1 ? `Row ${well.row} · Well ${well.index}` : `Well ${well.index}`;
   return well.label ? `${base} — ${well.label}` : base;
 }
