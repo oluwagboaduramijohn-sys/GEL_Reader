@@ -1,14 +1,11 @@
 # Sample gels
 
-Drop test photos here. For each image, add a matching `.txt` note (same file name) with whatever you know:
+Test photos for tuning Gel Reader. Everything in this folder except this README
+is kept out of git (study data).
 
-```
-gel type: DNA agarose 1%
-ladder: GeneRuler 1 kb (lane 1)
-wells: 1=ladder, 2=sample A, 3=sample B, 4=empty, ...
-expected sizes: sample A ~850 bp
-photo notes: phone photo, slightly tilted, a bit blurry
-```
+Record what is on each photo in **gel-info.xlsx**:
 
-A mix of good and bad photos (blurry, tilted, overexposed, smiling bands,
-multiplex or genotyping gels) is most useful.
+- **Gels** sheet: one row per photo (target, agarose %, ladder, rows of wells, expected sizes).
+- **Wells** sheet: one row per well (row, well, ladder/sample/control, sample name).
+
+Grey italic text in the workbook is a pre-filled guess to check. Yellow cells are for you to fill in.

@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Gel photos and lab notes are study data: keep them on this computer only
+sample-gels/*
+!sample-gels/README.md
+!sample-gels/.gitkeep
