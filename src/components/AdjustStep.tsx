@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { applyTone, grayToRGBA, looksLightBackground, type GrayImage } from '../lib/image'
+import type { Source } from '../App'
+import { stainLabel, type ImagingSetup } from '../data/imaging'
+import { applyTone, clippedFraction, grayToRGBA, looksLightBackground, type Channel, type GrayImage } from '../lib/image'
 import { drawPixels, type Adjust, type Crop } from '../lib/transform'
 import { svgPoint } from './svgPoint'
 
@@ -9,9 +11,16 @@ interface Props {
   adjust: Adjust
   onChange: (patch: Partial<Adjust>) => void
   guided: boolean
+  source: Source
+  setup: ImagingSetup
 }
 
-export function AdjustStep({ rotated, rawGray, adjust, onChange, guided }: Props) {
+const CHANNEL_LABEL: Record<Channel, string> = { gray: 'Grey', red: 'Red', green: 'Green', blue: 'Blue' }
+
+// above this share of clipped pixels, at least one band is likely blown out
+const OVEREXPOSED = 0.0003
+
+export function AdjustStep({ rotated, rawGray, adjust, onChange, guided, source, setup }: Props) {
   const view = useRef<HTMLCanvasElement>(null)
   const preview = useRef<HTMLCanvasElement>(null)
   const svg = useRef<SVGSVGElement>(null)
@@ -59,6 +68,7 @@ export function AdjustStep({ rotated, rawGray, adjust, onChange, guided }: Props
 
   const crop = drag?.crop ?? adjust.crop
   const suggestion = looksLightBackground(rawGray)
+  const clipped = source.saturatedFraction ?? clippedFraction(rawGray, adjust.invert)
 
   return (
     <section className="workspace">
@@ -150,6 +160,30 @@ export function AdjustStep({ rotated, rawGray, adjust, onChange, guided }: Props
             onChange={(e) => onChange({ contrast: parseFloat(e.target.value) })}
           />
         </label>
+        <label className="field">
+          Colour channel
+          <select value={adjust.channel} onChange={(e) => onChange({ channel: e.target.value as Adjust['channel'] })}>
+            <option value="auto">Automatic ({CHANNEL_LABEL[source.autoChannel].toLowerCase()} is clearest)</option>
+            {(Object.keys(CHANNEL_LABEL) as Channel[]).map((c) => (
+              <option key={c} value={c}>
+                {CHANNEL_LABEL[c]}
+              </option>
+            ))}
+          </select>
+        </label>
+        {guided && (
+          <p className="muted small">
+            {stainLabel(setup.stain)} glows in a particular colour, so one colour channel often shows bands more
+            clearly than plain grey. The tool picks the clearest one for you.
+          </p>
+        )}
+        {clipped > OVEREXPOSED && (
+          <p className="warn small">
+            Some bands look overexposed (pure white{source.saturatedFraction !== undefined ? ' on the sensor' : ''}).
+            Sizes are still usable, but blown-out bands get wider and can hide close neighbours. If you can, re-image
+            with a shorter exposure.
+          </p>
+        )}
         <p className="muted small">What the analysis sees (bands should be bright):</p>
         <canvas ref={preview} className="preview" />
       </aside>

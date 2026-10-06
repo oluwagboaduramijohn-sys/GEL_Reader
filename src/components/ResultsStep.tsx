@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { resolvingRange } from '../data/gelRanges'
+import { stainLabel, systemLabel, type ImagingSetup } from '../data/imaging'
 import { UNITS } from '../data/types'
 import { rowSpan } from '../lib/detect'
 import { formatSize, ladderFor, wellName, type BandResult, type LaneResult, type Project } from '../lib/project'
@@ -9,6 +10,7 @@ interface Props {
   project: Project
   results: LaneResult[]
   sourceName?: string
+  setup: ImagingSetup
 }
 
 function flags(br: BandResult) {
@@ -24,9 +26,9 @@ function csvCell(v: string | number | undefined) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-function toCSV(project: Project, results: LaneResult[]) {
+function toCSV(project: Project, results: LaneResult[], setup: ImagingSetup) {
   const unit = UNITS[project.gelType]
-  const header = ['row', 'well', 'label', 'role', 'band', 'position_px', `size_${unit}`, `low_${unit}`, `high_${unit}`, 'matches_expected', 'notes']
+  const header = ['row', 'well', 'label', 'role', 'band', 'position_px', `size_${unit}`, `low_${unit}`, `high_${unit}`, 'matches_expected', 'notes', 'gel_percent', 'imaging', 'stain']
   const lines = [header.join(',')]
   for (const lane of results) {
     lane.bands.forEach((br, i) => {
@@ -45,6 +47,9 @@ function toCSV(project: Project, results: LaneResult[]) {
           !isLadder && br.estimate ? formatSize(br.estimate.high, project.gelType).replace(/,/g, '') : '',
           br.matchesExpected ?? '',
           flags(br).join('; '),
+          project.gelPercent,
+          systemLabel(setup.system),
+          stainLabel(setup.stain),
         ]
           .map(csvCell)
           .join(','),
@@ -63,7 +68,7 @@ function download(name: string, text: string) {
   URL.revokeObjectURL(url)
 }
 
-export function ResultsStep({ project, results, sourceName }: Props) {
+export function ResultsStep({ project, results, sourceName, setup }: Props) {
   const unit = UNITS[project.gelType]
   const fmt = (n: number) => formatSize(n, project.gelType)
   const ladders = results.filter((l) => l.well.role === 'ladder' && l.calibration)
@@ -82,13 +87,13 @@ export function ResultsStep({ project, results, sourceName }: Props) {
         <h1>Results</h1>
         <button
           className="primary"
-          onClick={() => download(`${(sourceName ?? 'gel').replace(/\.[^.]+$/, '')}-bands.csv`, toCSV(project, results))}
+          onClick={() => download(`${(sourceName ?? 'gel').replace(/\.[^.]+$/, '')}-bands.csv`, toCSV(project, results, setup))}
         >
           Download CSV
         </button>
       </div>
       <p className="muted small">
-        {project.gelType.toUpperCase()} · {project.gelPercent}% gel
+        {project.gelType.toUpperCase()} · {stainLabel(setup.stain)} · {systemLabel(setup.system)} · {project.gelPercent}% gel
         {range ? ` (separates ~${range.min.toLocaleString()}–${range.max.toLocaleString()} ${unit} well)` : ''}. Sizes are
         estimates from the ladder; a typical gel is accurate to about ±5–10%.
       </p>

@@ -1,27 +1,35 @@
 import { useState } from 'react'
-import { loadImageFile } from '../lib/transform'
+import { STAINS, SYSTEMS, type ImagingSetup, type ImagingSystem, type Stain } from '../data/imaging'
+import { isTiff } from '../lib/tiff'
+import { loadImageFile, type LoadedImage } from '../lib/transform'
 
 interface Props {
-  onImage: (canvas: HTMLCanvasElement, name: string) => void
+  onImage: (image: LoadedImage, name: string) => void
   onExample: () => void
   current?: string
+  setup: ImagingSetup
+  onSetup: (s: ImagingSetup) => void
 }
 
-export function UploadStep({ onImage, onExample, current }: Props) {
+export function UploadStep({ onImage, onExample, current, setup, onSetup }: Props) {
   const [dragging, setDragging] = useState(false)
   const [error, setError] = useState<string>()
 
   const handle = async (file?: File) => {
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setError('That file is not an image. Use a JPG, PNG or similar photo of the gel.')
+    if (/\.(scn|1sc)$/i.test(file.name)) {
+      setError('This is a gel doc software file, which only that software can open. Export the image as TIFF or PNG from it, then upload that.')
+      return
+    }
+    if (!file.type.startsWith('image/') && !isTiff(file)) {
+      setError('That file is not an image. Use a TIFF, JPG or PNG of the gel.')
       return
     }
     try {
       setError(undefined)
       onImage(await loadImageFile(file), file.name)
     } catch {
-      setError('Could not open that image. Try saving it as JPG or PNG.')
+      setError('Could not open that image. Try exporting it as PNG or an uncompressed TIFF.')
     }
   }
 
@@ -31,6 +39,30 @@ export function UploadStep({ onImage, onExample, current }: Props) {
       <p className="muted">
         Upload a photo of your gel. Everything happens in your browser, so the image never leaves your computer.
       </p>
+
+      <div className="grid2 setup">
+        <label className="field">
+          How was it imaged?
+          <select value={setup.system} onChange={(e) => onSetup({ ...setup, system: e.target.value as ImagingSystem })}>
+            {SYSTEMS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          Stain
+          <select value={setup.stain} onChange={(e) => onSetup({ ...setup, stain: e.target.value as Stain })}>
+            {STAINS.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <p className="muted small">{SYSTEMS.find((s) => s.id === setup.system)?.hint} Your choice is remembered on this computer.</p>
 
       <label
         className={`dropzone ${dragging ? 'over' : ''}`}
@@ -45,9 +77,9 @@ export function UploadStep({ onImage, onExample, current }: Props) {
           handle(e.dataTransfer.files[0])
         }}
       >
-        <input type="file" accept="image/*" onChange={(e) => handle(e.target.files?.[0])} hidden />
+        <input type="file" accept="image/*,.tif,.tiff" onChange={(e) => handle(e.target.files?.[0])} hidden />
         <strong>Drop a gel photo here</strong>
-        <span className="muted">or click to choose a file</span>
+        <span className="muted">or click to choose a file · TIFF, PNG or JPG</span>
       </label>
       {error && <p className="warn">{error}</p>}
       {current && <p className="muted">Current image: {current}</p>}

@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "utif": "^3.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

@@ -1,5 +1,8 @@
 // Browser-side image loading, rotation and cropping (canvas based).
 
+import type { Channel } from './image';
+import { decodeTiff, isTiff } from './tiff';
+
 export interface Crop {
   x: number;
   y: number;
@@ -13,9 +16,10 @@ export interface Adjust {
   crop: Crop | null; // in rotated-image px
   invert: boolean;
   contrast: number; // 0..1
+  channel: Channel | 'auto';
 }
 
-export const DEFAULT_ADJUST: Adjust = { quarterTurns: 0, rotation: 0, crop: null, invert: false, contrast: 0.2 };
+export const DEFAULT_ADJUST: Adjust = { quarterTurns: 0, rotation: 0, crop: null, invert: false, contrast: 0.2, channel: 'auto' };
 
 const MAX_SIDE = 1600; // phone photos are huge; this is plenty for gel bands
 
@@ -32,13 +36,29 @@ function ctx2d(c: HTMLCanvasElement) {
   return ctx;
 }
 
-export async function loadImageFile(file: File): Promise<HTMLCanvasElement> {
-  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
-  const c = canvas(bitmap.width * scale, bitmap.height * scale);
-  ctx2d(c).drawImage(bitmap, 0, 0, c.width, c.height);
-  bitmap.close();
+function fitToMaxSide(src: CanvasImageSource & { width: number; height: number }) {
+  const scale = Math.min(1, MAX_SIDE / Math.max(src.width, src.height));
+  const c = canvas(src.width * scale, src.height * scale);
+  const ctx = ctx2d(c);
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, c.width, c.height);
   return c;
+}
+
+export interface LoadedImage {
+  canvas: HTMLCanvasElement;
+  saturatedFraction?: number; // from 16-bit sensor data, when available
+}
+
+export async function loadImageFile(file: File): Promise<LoadedImage> {
+  if (isTiff(file)) {
+    const decoded = decodeTiff(await file.arrayBuffer());
+    return { canvas: fitToMaxSide(canvasFromPixels(decoded)), saturatedFraction: decoded.saturatedFraction };
+  }
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const c = fitToMaxSide(bitmap);
+  bitmap.close();
+  return { canvas: c };
 }
 
 export function canvasFromPixels(img: { width: number; height: number; data: Uint8ClampedArray }) {

@@ -4,10 +4,16 @@ import { AnalyzeStep } from './components/AnalyzeStep'
 import { ResultsStep } from './components/ResultsStep'
 import { UploadStep } from './components/UploadStep'
 import { WellsStep } from './components/WellsStep'
-import { applyTone, looksLightBackground, toGray } from './lib/image'
+import { loadSetup, saveSetup, type ImagingSetup } from './data/imaging'
+import { applyTone, bestChannel, looksLightBackground, toGray, type Channel } from './lib/image'
 import { analyse, makeWells, newProject, type Project } from './lib/project'
 import { EXAMPLE_SPEC, renderSyntheticGel } from './lib/syntheticGel'
-import { canvasFromPixels, cropPixels, DEFAULT_ADJUST, renderRotated, type Adjust } from './lib/transform'
+import { canvasFromPixels, cropPixels, DEFAULT_ADJUST, renderRotated, type Adjust, type LoadedImage } from './lib/transform'
+
+export interface Source extends LoadedImage {
+  name: string
+  autoChannel: Channel
+}
 
 const STEPS = [
   { id: 'upload', label: 'Upload' },
@@ -41,7 +47,12 @@ function exampleProject(): Project {
 
 function App() {
   const [step, setStep] = useState<StepId>('upload')
-  const [source, setSource] = useState<{ canvas: HTMLCanvasElement; name: string } | null>(null)
+  const [source, setSource] = useState<Source | null>(null)
+  const [setup, setSetupState] = useState<ImagingSetup>(loadSetup)
+  const setSetup = (s: ImagingSetup) => {
+    setSetupState(s)
+    saveSetup(s)
+  }
   const [adjust, setAdjust] = useState<Adjust>(DEFAULT_ADJUST)
   const [project, setProject] = useState<Project>(() => newProject())
   const [guided, setGuided] = useState(true)
@@ -52,7 +63,11 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [source, adjust.quarterTurns, adjust.rotation],
   )
-  const rawGray = useMemo(() => (rotated ? toGray(cropPixels(rotated, adjust.crop)) : null), [rotated, adjust.crop])
+  const channel = adjust.channel === 'auto' ? (source?.autoChannel ?? 'gray') : adjust.channel
+  const rawGray = useMemo(
+    () => (rotated ? toGray(cropPixels(rotated, adjust.crop), channel) : null),
+    [rotated, adjust.crop, channel],
+  )
   const analysisImg = useMemo(
     () => (rawGray ? applyTone(rawGray, { invert: adjust.invert, contrast: adjust.contrast }) : null),
     [rawGray, adjust.invert, adjust.contrast],
@@ -77,15 +92,17 @@ function App() {
     })
   }
 
-  const loadSource = (canvas: HTMLCanvasElement, name: string, proj?: Project) => {
-    const gray = toGray(cropPixels(canvas, null))
-    setSource({ canvas, name })
-    setAdjust({ ...DEFAULT_ADJUST, invert: looksLightBackground(gray) })
+  const loadSource = (loaded: LoadedImage, name: string, proj?: Project) => {
+    const pixels = cropPixels(loaded.canvas, null)
+    const autoChannel = bestChannel(pixels)
+    setSource({ ...loaded, name, autoChannel })
+    setAdjust({ ...DEFAULT_ADJUST, invert: looksLightBackground(toGray(pixels, autoChannel)) })
     setProject((p) => clearGeometry(proj ?? p))
     setStep('adjust')
   }
 
-  const loadExample = () => loadSource(canvasFromPixels(renderSyntheticGel(EXAMPLE_SPEC)), 'Example gel', exampleProject())
+  const loadExample = () =>
+    loadSource({ canvas: canvasFromPixels(renderSyntheticGel(EXAMPLE_SPEC)) }, 'Example gel', exampleProject())
 
   const stepIndex = STEPS.findIndex((s) => s.id === step)
 
@@ -115,9 +132,17 @@ function App() {
       </nav>
 
       <main className="content">
-        {step === 'upload' && <UploadStep onImage={loadSource} onExample={loadExample} current={source?.name} />}
+        {step === 'upload' && <UploadStep onImage={loadSource} onExample={loadExample} current={source?.name} setup={setup} onSetup={setSetup} />}
         {step === 'adjust' && rotated && rawGray && (
-          <AdjustStep rotated={rotated} rawGray={rawGray} adjust={adjust} onChange={updateAdjust} guided={guided} />
+          <AdjustStep
+            rotated={rotated}
+            rawGray={rawGray}
+            adjust={adjust}
+            onChange={updateAdjust}
+            guided={guided}
+            source={source!}
+            setup={setup}
+          />
         )}
         {step === 'wells' && (
           <WellsStep project={project} setProject={setProject} guided={guided} clearGeometry={clearGeometry} />
@@ -125,7 +150,7 @@ function App() {
         {step === 'analyze' && analysisImg && (
           <AnalyzeStep img={analysisImg} project={project} setProject={setProject} results={results} guided={guided} />
         )}
-        {step === 'results' && <ResultsStep project={project} results={results} sourceName={source?.name} />}
+        {step === 'results' && <ResultsStep project={project} results={results} sourceName={source?.name} setup={setup} />}
       </main>
 
       {source && (

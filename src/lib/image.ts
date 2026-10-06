@@ -6,15 +6,55 @@ export interface GrayImage {
   data: Float32Array;
 }
 
-export function toGray(img: { width: number; height: number; data: Uint8ClampedArray }): GrayImage {
+export type Channel = 'gray' | 'red' | 'green' | 'blue';
+
+type RGBAImage = { width: number; height: number; data: Uint8ClampedArray };
+
+export function toGray(img: RGBAImage, channel: Channel = 'gray'): GrayImage {
   const out = new Float32Array(img.width * img.height);
+  const d = img.data;
   for (let i = 0; i < out.length; i++) {
-    const r = img.data[i * 4];
-    const g = img.data[i * 4 + 1];
-    const b = img.data[i * 4 + 2];
-    out[i] = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    const r = d[i * 4];
+    const g = d[i * 4 + 1];
+    const b = d[i * 4 + 2];
+    out[i] =
+      (channel === 'red' ? r : channel === 'green' ? g : channel === 'blue' ? b : 0.2126 * r + 0.7152 * g + 0.0722 * b) /
+      255;
   }
   return { width: img.width, height: img.height, data: out };
+}
+
+/**
+ * Which colour channel shows the bands most clearly? EtBr fluoresces orange,
+ * SYBR/GelGreen green, so one channel often has far better signal-to-noise
+ * than plain grey. Score = spread between background and the brightest (or
+ * darkest) features, divided by pixel-to-pixel noise.
+ */
+export function bestChannel(img: RGBAImage): Channel {
+  let best: Channel = 'gray';
+  let bestScore = -Infinity;
+  for (const ch of ['gray', 'red', 'green', 'blue'] as Channel[]) {
+    const g = toGray(img, ch);
+    const mid = percentile(g.data, 50);
+    const signal = Math.max(percentile(g.data, 99.5) - mid, mid - percentile(g.data, 0.5));
+    const diffs = new Float32Array(g.data.length - 1);
+    for (let i = 0; i < diffs.length; i++) diffs[i] = Math.abs(g.data[i + 1] - g.data[i]);
+    const noise = percentile(diffs, 50) + 1 / 255;
+    // plain grey wins ties: it's what people expect to see
+    const score = (signal / noise) * (ch === 'gray' ? 1.1 : 1);
+    if (score > bestScore) {
+      bestScore = score;
+      best = ch;
+    }
+  }
+  return best;
+}
+
+/** Share of pixels clipped at the signal end (white bands, or black bands when inverted). */
+export function clippedFraction(gray: GrayImage, invert: boolean) {
+  let n = 0;
+  for (const v of gray.data) if (invert ? v <= 0.004 : v >= 0.996) n++;
+  return n / gray.data.length;
 }
 
 function percentile(data: Float32Array, p: number) {
