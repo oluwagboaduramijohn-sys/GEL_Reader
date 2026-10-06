@@ -2,7 +2,7 @@
 
 import type { GrayImage } from './image';
 import { suggestLadderSizes } from './ladderMatch';
-import { columnProfile, findPeaks, fitLaneGrid, laneFloor, laneProfile, snapToPeak } from './profile';
+import { bandCountProfile, columnProfile, findPeaks, fitLaneGrid, laneFloor, laneProfile, snapToPeak, type GridRow } from './profile';
 import { ladderFor, laneKey, rowCount, rowSpan, type Band, type Project } from './project';
 
 export { rowSpan };
@@ -17,12 +17,36 @@ export function autoLanes(project: Project, img: GrayImage): Pick<Project, 'rowT
     project.rowTops.length === rows
       ? project.rowTops
       : Array.from({ length: rows }, (_, r) => Math.round(((r + 0.06) * img.height) / rows));
+  const rowsOf = (count: number) =>
+    project.rowWells.flatMap((c, r) => (c === count ? [r] : []));
+  const gridRow = (r: number): GridRow => {
+    const span = rowSpan({ rowTops }, r + 1, img.height);
+    const role = (k: number) => project.wells.find((w) => w.row === r + 1 && w.index === k + 1)?.role;
+    const wells = Array.from({ length: project.rowWells[r] }, (_, k) => role(k));
+    return {
+      profile: columnProfile(img, span.start, span.bottom),
+      empty: wells.map((role) => role === 'empty'),
+      ladder: wells.map((role) => role === 'ladder'),
+      bandCount: bandCountProfile(img, span.start, span.bottom),
+    };
+  };
+  const gridRows = Array.from({ length: rows }, (_, r) => gridRow(r));
+
+  // Rows with the same number of wells almost always come from the same comb,
+  // so fit them together: a row with empty wells or a dim ladder can't slide
+  // its grid along by a lane when the other rows pin it. Each row may then
+  // shift a little, as combs are rarely placed exactly in line.
+  const shared = new Map<number, { first: number; spacing: number }>();
+  for (const count of new Set(project.rowWells)) {
+    shared.set(count, fitLaneGrid(rowsOf(count).map((r) => gridRows[r]), count));
+  }
+
   const laneX: Record<string, number> = {};
   let spacing = Infinity;
   for (let row = 1; row <= rows; row++) {
     const count = project.rowWells[row - 1];
-    const span = rowSpan({ rowTops }, row, img.height);
-    const grid = fitLaneGrid(columnProfile(img, span.start, span.bottom), count);
+    const base = shared.get(count)!;
+    const grid = count > 1 ? fitLaneGrid([gridRows[row - 1]], count, { ...base, maxShift: base.spacing * 0.4 }) : base;
     // one lane width for the whole gel: fit the most tightly packed row
     spacing = Math.min(spacing, count > 1 ? grid.spacing : img.width / 2);
     for (let index = 1; index <= count; index++) {

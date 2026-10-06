@@ -88,6 +88,7 @@ export function laneFloor(p: Float32Array) {
 export interface PeakOptions {
   sensitivity?: number; // 0..1, higher finds fainter bands
   minSeparation?: number; // px
+  minProminence?: number; // absolute floor, for comparing many profiles on one scale
 }
 
 /** Find bands in a lane profile. */
@@ -105,7 +106,7 @@ export function findPeaks(raw: Float32Array, opts: PeakOptions = {}): Peak[] {
   const diffs = Array.from({ length: n - 1 }, (_, i) => Math.abs(raw[i + 1] - raw[i])).sort((a, b) => a - b);
   const noise = (1.4826 * diffs[Math.floor(diffs.length / 2)]) / Math.SQRT2;
   const max = p.reduce((a, b) => Math.max(a, b), 0);
-  const threshold = Math.max(noise * (6 - 5 * sensitivity), max * (0.12 - 0.11 * sensitivity), 1e-4);
+  const threshold = Math.max(noise * (6 - 5 * sensitivity), max * (0.12 - 0.11 * sensitivity), opts.minProminence ?? 0, 1e-4);
 
   const floor = laneFloor(smooth);
   const window = Math.max(minSep * 3, Math.round(n / 10));
@@ -154,36 +155,93 @@ export function snapToPeak(profile: Float32Array, index: number, radius = 4): nu
   return best;
 }
 
+export interface GridRow {
+  profile: Float32Array;
+  empty?: boolean[]; // per well (0-based): marked empty in the well map
+  ladder?: boolean[]; // per well (0-based): holds a ladder
+  bandCount?: Float32Array; // per column: how many bands run down it (see bandCountProfile)
+}
+
 /**
- * Place `count` evenly spaced lanes across a column profile. Knowing the
- * number of wells makes this far more robust than finding lanes freely.
+ * For each column, how many separate bands run down it between y0 and y1.
+ * A ladder lane has many; a sample lane one or two, however bright. Used to
+ * find the ladder when it is much fainter than overloaded PCR products.
  */
-export function fitLaneGrid(profile: Float32Array, count: number): { first: number; spacing: number } {
-  const w = profile.length;
+export function bandCountProfile(img: GrayImage, y0: number, y1: number, step = 1): Float32Array {
+  const out = new Float32Array(img.width);
+  // one threshold for the whole row, so blank columns don't count their noise as bands
+  const top = Math.max(0, Math.round(y0));
+  const region = img.data.subarray(top * img.width, Math.min(img.height, Math.round(y1) + 1) * img.width);
+  const sorted = Float32Array.from(region).sort();
+  const range = sorted[Math.floor(sorted.length * 0.995)] - sorted[Math.floor(sorted.length * 0.5)];
+  for (let x = 0; x < img.width; x += step) {
+    const n = findPeaks(laneProfile(img, x, 1, y0, y1), { sensitivity: 0.5, minProminence: range * 0.06 }).length;
+    for (let i = x; i < Math.min(img.width, x + step); i++) out[i] = n;
+  }
+  return out;
+}
+
+/**
+ * Place `count` evenly spaced lanes across one or more column profiles (rows
+ * from the same comb). Knowing the number of wells makes this far more robust
+ * than finding lanes freely, and knowing which wells are empty settles where a
+ * row starts when its ladder is faint and its last wells are unused.
+ */
+const LADDER_WEIGHT = 3; // one ladder lane vs many sample lanes: it needs a strong say
+
+function zScaled(p: Float32Array) {
+  const mean = p.reduce((a, b) => a + b, 0) / p.length;
+  const sd = Math.sqrt(p.reduce((a, b) => a + (b - mean) ** 2, 0) / p.length) || 1;
+  return p.map((v) => (v - mean) / sd);
+}
+
+export function fitLaneGrid(
+  input: Float32Array | GridRow[],
+  count: number,
+  // refine an existing grid: keep its spacing, move the first lane at most this far
+  near?: { first: number; spacing: number; maxShift: number },
+): { first: number; spacing: number } {
+  const rows = input instanceof Float32Array ? [{ profile: input }] : input;
+  const w = rows[0].profile.length;
   if (count <= 1) {
-    const s = gaussianSmooth(profile, w / 20);
+    const s = gaussianSmooth(rows[0].profile, w / 20);
     let best = 0;
     for (let i = 0; i < w; i++) if (s[i] > s[best]) best = i;
     return { first: best, spacing: w };
   }
-  const minSpacing = w / (count * 2); // lanes should span at least half the (cropped) image
-  const maxSpacing = (w - 1) / (count - 0.2);
-  const s = gaussianSmooth(profile, Math.max(1, minSpacing / 6));
-  const mean = s.reduce((a, b) => a + b, 0) / w;
-  const at = (x: number) => {
-    const i = Math.floor(x);
-    const t = x - i;
-    return s[i] * (1 - t) + (s[Math.min(w - 1, i + 1)] ?? s[i]) * t;
-  };
+  const minSpacing = near?.spacing ?? w / (count * 2); // lanes should span at least half the (cropped) image
+  const maxSpacing = near?.spacing ?? (w - 1) / (count - 0.2);
+  // each row scaled to zero mean and unit spread, so a faint row counts as much as a bright one
+  const scaled = rows.map((r) => {
+    const z = zScaled(gaussianSmooth(r.profile, Math.max(1, minSpacing / 6)));
+    const at = (x: number) => {
+      const i = Math.floor(x);
+      const t = x - i;
+      return z[i] * (1 - t) + (z[Math.min(w - 1, i + 1)] ?? z[i]) * t;
+    };
+    const counts = r.bandCount && r.ladder?.some(Boolean) ? zScaled(gaussianSmooth(r.bandCount, Math.max(1, minSpacing / 6))) : null;
+    return {
+      at,
+      atCount: (x: number) => (counts ? counts[Math.min(w - 1, Math.max(0, Math.round(x)))] : 0),
+      sign: Array.from({ length: count }, (_, k) => (r.empty?.[k] ? -1 : 1)),
+      ladder: Array.from({ length: count }, (_, k) => !!r.ladder?.[k]),
+    };
+  });
 
   let best = { first: w / (2 * count), spacing: w / count, score: -Infinity };
   for (let spacing = minSpacing; spacing <= maxSpacing; spacing += 0.5) {
     const span = spacing * (count - 1);
-    for (let first = spacing * 0.3; first + span <= w - 1 - spacing * 0.3; first += 0.5) {
+    const lo = near ? Math.max(0, near.first - near.maxShift) : spacing * 0.3;
+    const hi = near ? Math.min(w - 1 - span, near.first + near.maxShift) : w - 1 - spacing * 0.3 - span;
+    for (let first = lo; first <= hi; first += 0.5) {
       let score = 0;
-      // reward bright lane centres, penalise bright gaps between lanes
-      for (let k = 0; k < count; k++) score += at(first + k * spacing) - mean;
-      for (let k = 0; k < count - 1; k++) score -= 0.5 * (at(first + (k + 0.5) * spacing) - mean);
+      for (const { at, atCount, sign, ladder } of scaled) {
+        // reward bright lane centres (dark ones for empty wells), penalise bright gaps between lanes
+        for (let k = 0; k < count; k++) score += sign[k] * at(first + k * spacing);
+        for (let k = 0; k < count - 1; k++) score -= at(first + (k + 0.5) * spacing);
+        // ladder wells should land where many bands run down the gel
+        for (let k = 0; k < count; k++) if (ladder[k]) score += LADDER_WEIGHT * atCount(first + k * spacing);
+      }
       if (score > best.score) best = { first, spacing, score };
     }
   }

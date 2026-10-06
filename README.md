@@ -12,10 +12,25 @@ npm test        # run unit tests
 npm run build   # type-check and build
 ```
 
+## Testing on real gel photos
+
+The photos in `sample-gels/` stay out of git (study data), and so does
+`sample-gels/cases.json`, which records for each photo the crop, wells per
+row, which wells hold ladders, and where the ladders really are.
+
+```bash
+python3 scripts/samples/prepare.py   # decode the photos (needs Pillow)
+npm run samples                      # run the automatic pipeline on each case
+python3 scripts/samples/overlay.py   # draw lanes, bands and sizes on each gel
+```
+
+Results, overlays and `summary.txt` go to `sample-gels/.out/`.
+
 ## Layout
 
 - `src/data/` — data model (`types.ts`) and preinstalled ladders (`ladders.ts`)
 - `src/lib/` — image processing and calibration math
 - `src/components/` — UI
 - `sample-gels/` — test photos with notes
+- `scripts/samples/` — runs the pipeline on the test photos
 - `docs/` — plan and design notes

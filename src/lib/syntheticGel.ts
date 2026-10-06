@@ -5,6 +5,7 @@ export interface SyntheticLane {
   ladder?: number[]; // ladder sizes
   referenceSize?: number; // drawn twice as bright
   bands?: number[]; // sample band sizes
+  brightness?: number; // multiplies every band in the lane (overloaded PCR products, a faint ladder)
 }
 
 export interface SyntheticGelSpec {
@@ -56,10 +57,11 @@ export function renderSyntheticGel(spec: SyntheticGelSpec) {
   spec.lanes.forEach((lane, k) => {
     const cx = first + k * spacing;
     const bands: { size: number; amp: number }[] = [];
+    const gain = lane?.brightness ?? 1;
     if (lane?.ladder) {
-      for (const size of lane.ladder) bands.push({ size, amp: size === lane.referenceSize ? 0.8 : 0.45 });
+      for (const size of lane.ladder) bands.push({ size, amp: gain * (size === lane.referenceSize ? 0.8 : 0.45) });
     }
-    for (const size of lane?.bands ?? []) bands.push({ size, amp: 0.6 });
+    for (const size of lane?.bands ?? []) bands.push({ size, amp: gain * 0.6 });
 
     for (let x = Math.floor(cx - halfWidth - 6); x <= Math.ceil(cx + halfWidth + 6); x++) {
       if (x < 0 || x >= width) continue;

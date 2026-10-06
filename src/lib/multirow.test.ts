@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { autoLanes, detectBands } from './detect';
 import { applyTone, toGray } from './image';
 import { analyse, makeWells, newProject, type Project } from './project';
-import { EXAMPLE_LADDER, renderSyntheticGel, type SyntheticLane } from './syntheticGel';
+import { EXAMPLE_LADDER, renderSyntheticGel, syntheticLaneGeometry, type SyntheticLane } from './syntheticGel';
 
 /** Render one synthetic gel per row and stack them, like a multi-comb gel. */
 function stackedGel(rows: (SyntheticLane | null)[][]) {
@@ -58,6 +58,27 @@ describe('multi-comb gels', () => {
     check(sizesIn(lane(1, 3)), [320, 210]);
     check(sizesIn(lane(2, 2)), [1100]);
     check(sizesIn(lane(2, 3)), [450]);
+  });
+
+  it('keeps a faint ladder lane in place when the row ends in empty wells', () => {
+    // like the real gels: overloaded PCR products, a faint ladder, and a
+    // second row with only a few wells used
+    const ladder = { ladder: EXAMPLE_LADDER, referenceSize: 500, brightness: 0.35 };
+    const sample = (size: number) => ({ bands: [size], brightness: 2.5 });
+    const rows = [
+      [ladder, ...Array.from({ length: 9 }, (_, k) => sample(300 + 60 * k))],
+      [ladder, sample(600), sample(450), sample(800), null, null, null, null, null, null],
+    ];
+    const img = stackedGel(rows);
+    let p: Project = { ...newProject('dna'), rowWells: [10, 10], wells: makeWells([10, 10]), rowTops: [30, 350] };
+    p = { ...p, ...autoLanes(p, img) };
+    const truth = syntheticLaneGeometry({ width: 480, height: 320, wellY: 30, lanes: rows[0] });
+    for (const row of [1, 2]) {
+      for (let index = 1; index <= 10; index++) {
+        const want = truth.first + (index - 1) * truth.spacing;
+        expect(Math.abs(p.laneX[`${row}-${index}`] - want)).toBeLessThan(truth.spacing * 0.2);
+      }
+    }
   });
 
   it('borrows a ladder from another row when a row has none', () => {
