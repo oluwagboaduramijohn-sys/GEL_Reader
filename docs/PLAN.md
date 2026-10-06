@@ -33,7 +33,8 @@ calibrate against the ladder → sizes, panel calls and export
 ## Open items
 
 - [ ] Add TransGen 50 bp ladder (band list pending from lab).
-- [ ] Verify every preinstalled ladder (`src/data/ladders.ts`) against the current manufacturer datasheet and add ng per band.
+- [x] Verify the preinstalled ladders (`src/data/ladders.ts`) against manufacturer datasheets and add ng per band (6 Oct 2026). Fixed NEB ssRNA Ladder sizes; added reference bands.
+- [ ] Check NEB Quick-Load 1 kb (N0468) and 100 bp (N0467) against their own datasheets (neb.com blocks automated fetching); currently copied from N3232/N3231.
 - [ ] Collect test photos in `sample-gels/`, each with a note on gel type, ladder and well contents.
 - [ ] Decide the calibration model: semi-log linear vs. cubic spline vs. point-to-point. Compare them on real gels.
 

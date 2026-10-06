@@ -123,13 +123,15 @@ export function suggestLadderSizes(
     return result;
   }
 
-  // The reference band (e.g. TransGen's 500 bp) is the anchor, as a person
-  // would use it. Merged neighbours can look bright too, so consider the two
-  // brightest bands as candidates, and only if they stand out from the rest.
+  // Reference bands (e.g. TransGen's 500 bp, or GeneRuler 1 kb's 6000/3000/1000)
+  // are the anchor, as a person would use them. Merged neighbours can look
+  // bright too, so consider the two brightest bands as candidates, and only if
+  // they stand out from the rest. Any of them may sit on any reference band.
   const byBrightness = order.map((_, p) => p).sort((a, b) => bands[order[b]].intensity - bands[order[a]].intensity);
   const median = bands[order[byBrightness[Math.floor(n / 2)]]].intensity;
-  const refIndex = sizes.findIndex((s) => s.reference);
-  const anchors = refIndex >= 0 ? byBrightness.slice(0, 2).filter((p) => bands[order[p]].intensity > median * 1.25) : [];
+  const refIndices = sizes.flatMap((s, j) => (s.reference ? [j] : []));
+  const isRef = (j: number) => refIndices.includes(j);
+  const anchors = refIndices.length ? byBrightness.slice(0, 2).filter((p) => bands[order[p]].intensity > median * 1.25) : [];
 
   const span = ys[n - 1] - ys[0];
   const top = extent?.top ?? ys[0];
@@ -148,18 +150,20 @@ export function suggestLadderSizes(
     starts.push(map);
   }
   for (const a of anchors) {
-    const map = new Array<number>(n).fill(-1);
-    for (let p = 0; p < n; p++) {
-      const j = refIndex + (p - a);
-      if (j >= 0 && j < m) map[p] = j;
+    for (const r of refIndices) {
+      const map = new Array<number>(n).fill(-1);
+      for (let p = 0; p < n; p++) {
+        const j = r + (p - a);
+        if (j >= 0 && j < m) map[p] = j;
+      }
+      starts.push(map);
     }
-    starts.push(map);
   }
 
   // Variants of each guess with up to two ladder bands assumed merged or
   // missing at any position (crowded tops of short gels often lose two), so
   // the refinement can start near gap-in-the-middle answers.
-  const pivot = (map: number[]) => anchors.find((p) => map[p] === refIndex) ?? Math.floor(n / 2);
+  const pivot = (map: number[]) => anchors.find((p) => isRef(map[p])) ?? Math.floor(n / 2);
   const withGap = (base: number[], c: number, k: number) =>
     base.map((j, p) => {
       if (j < 0) return j;
@@ -209,7 +213,7 @@ export function suggestLadderSizes(
       });
       const next = matchMonotone(ys, predicted, skipPeakCost, skipBandCost);
       score = next.cost;
-      if (anchors.length && !anchors.some((a) => next.map[a] === refIndex)) score += skipPeakCost * 4;
+      if (anchors.length && !anchors.some((a) => isRef(next.map[a]))) score += skipPeakCost * 4;
       const same = next.map.every((j, p) => j === map[p]);
       map = next.map;
       if (same) break;

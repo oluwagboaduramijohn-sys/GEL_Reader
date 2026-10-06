@@ -21,6 +21,7 @@ export interface Ladder {
   catalogNumber?: string;
   gelType: GelType;
   bands: LadderBand[]; // largest to smallest (top of gel to bottom)
+  massLoad?: string; // the load the bands' massNg values are for, e.g. '0.5 µg (1 µL)'
   // false until checked against the manufacturer's current datasheet
   verified: boolean;
   custom?: boolean; // user-uploaded

@@ -33,6 +33,16 @@ describe('suggestLadderSizes', () => {
     expect(suggestLadderSizes(detect(seen), transgen)).toEqual(seen);
   });
 
+  it('anchors on whichever reference band is visible when a ladder has several', () => {
+    // NEB 100 bp: 1000 and 500 bp are both brighter; only 500 is in view
+    const neb100 = [1517, 1200, 1000, 900, 800, 700, 600, 500, 400, 300, 200, 100].map((size) => ({
+      size,
+      reference: size === 1000 || size === 500,
+    }));
+    const seen = [700, 600, 500, 400, 300];
+    expect(suggestLadderSizes(detect(seen), neb100)).toEqual(seen);
+  });
+
   it('leaves an extra speck unlabelled', () => {
     const sizes = transgen.map((b) => b.size);
     const bands = [...detect(sizes), { y: syntheticY(spec, 545), intensity: 0.1 }];
