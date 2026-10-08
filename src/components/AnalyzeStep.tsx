@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { laddersFor } from '../data/ladders'
 import { UNITS } from '../data/types'
 import { autoLanes, detectBands, laneAt, manualBand, relabelLadders, rowSpan } from '../lib/detect'
@@ -22,7 +22,6 @@ type Drag =
   | { kind: 'click'; x: number; y: number }
 
 export function AnalyzeStep({ img, project, setProject, results, guided }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [selectedId, setSelectedId] = useState<string>()
   const [sensitivity, setSensitivity] = useState(0.5)
@@ -32,9 +31,17 @@ export function AnalyzeStep({ img, project, setProject, results, guided }: Props
   const unit = UNITS[project.gelType]
   const fs = Math.max(11, Math.round(W / 60)) // label size in image px
 
-  useEffect(() => {
-    if (canvasRef.current) drawPixels(canvasRef.current, W, H, grayToRGBA(img))
-  }, [img, W, H])
+  // Draw the gel whenever its canvas appears, not just when the image changes:
+  // the canvas isn't on the page while lanes are being placed ("Finding
+  // lanes…"), so drawing only on image change left it blank until the user
+  // left the step and came back.
+  const pixels = useMemo(() => grayToRGBA(img), [img])
+  const canvasRef = useCallback(
+    (canvas: HTMLCanvasElement | null) => {
+      if (canvas) drawPixels(canvas, W, H, pixels)
+    },
+    [pixels, W, H],
+  )
 
   // place lanes the first time (or after the well layout changed)
   const needsLanes = project.wells.some((w) => project.laneX[laneKey(w)] === undefined)
