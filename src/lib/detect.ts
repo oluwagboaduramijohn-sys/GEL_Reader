@@ -1,5 +1,6 @@
 // Automatic lane placement and band detection, driven by the well map.
 
+import { fitCalibration } from './calibration';
 import type { GrayImage } from './image';
 import { suggestLadderSizes } from './ladderMatch';
 import { bandCountProfile, columnProfile, findPeaks, fitLaneGrid, laneFloor, laneProfile, snapToPeak, type GridRow } from './profile';
@@ -91,7 +92,81 @@ export function detectBands(project: Project, img: GrayImage, sensitivity: numbe
 
     found.push(...bands);
   }
-  return relabelLadders(project, [...kept, ...found], undefined, img.height);
+  const labelled = trimLadderTails(project, relabelLadders(project, [...kept, ...found], undefined, img.height));
+  return dropBelowLadders(project, labelled, img.height);
+}
+
+/**
+ * At its bottom end a ladder's small fragments run well apart and don't go
+ * missing, so a band labelled after two or more skipped sizes there is
+ * almost always a smudge or the gel's edge. Unlabel it (and drop it, if it
+ * was found automatically), so it can't bend the calibration.
+ */
+function trimLadderTails(project: Project, bands: Band[]): Band[] {
+  const drop = new Set<string>();
+  for (const well of project.wells) {
+    const ladder = well.role === 'ladder' ? ladderFor(well) : undefined;
+    if (!ladder) continue;
+    const order = ladder.bands.map((b) => b.size);
+    const labelled = bands
+      .filter((b) => b.laneKey === laneKey(well) && b.ladderSize !== undefined && !b.sizeLocked)
+      .sort((a, b) => a.y - b.y);
+    while (labelled.length >= 2) {
+      const last = labelled[labelled.length - 1];
+      const prev = labelled[labelled.length - 2];
+      if (order.indexOf(last.ladderSize!) - order.indexOf(prev.ladderSize!) <= 2) break;
+      drop.add(last.id);
+      labelled.pop();
+    }
+  }
+  return bands.flatMap((b) => {
+    if (!drop.has(b.id)) return [b];
+    return b.source === 'manual' ? [{ ...b, ladderSize: undefined }] : [];
+  });
+}
+
+/**
+ * Nothing below a row's smallest ladder fragment (e.g. 100 bp) can be sized
+ * without extrapolating, and down there it's mostly noise: the gel's edge,
+ * smudges. Drop automatically found bands below it, allowing half the gap
+ * between the two lowest ladder bands. When the smallest fragment itself
+ * wasn't found (often faint), its place is read off the ladder's curve, so
+ * real bands inside the ladder's range are kept. A row without a ladder uses
+ * the one it borrows, shifted by the distance between their well lines; a
+ * ladder with fewer than 2 labelled bands sets no cut-off.
+ */
+function dropBelowLadders(project: Project, bands: Band[], imageHeight: number): Band[] {
+  const cuts = new Map<number, number>(); // row -> cut-off y
+  for (const well of project.wells) {
+    const ladder = well.role === 'ladder' ? ladderFor(well) : undefined;
+    if (!ladder) continue;
+    const points = bands
+      .filter((b) => b.laneKey === laneKey(well) && b.ladderSize !== undefined)
+      .map((b) => ({ y: b.y, size: b.ladderSize! }))
+      .sort((a, b) => a.y - b.y);
+    const fit = fitCalibration(points);
+    if (!fit.ok) continue;
+    const smallest = Math.min(...ladder.bands.map((b) => b.size));
+    const last = points[points.length - 1];
+    const bottom = rowSpan(project, well.row, imageHeight).bottom;
+    let y = last.y;
+    while (y < bottom && last.size > smallest && fit.calibration.predict(y).size > smallest) y += 1;
+    if (y >= bottom) continue; // the ladder's range reaches past this row: nothing to cut
+    const cut = y + Math.max(4, (last.y - points[points.length - 2].y) / 2);
+    cuts.set(well.row, Math.max(cuts.get(well.row) ?? -Infinity, cut));
+  }
+  if (!cuts.size) return bands;
+  const cutFor = (row: number) => {
+    if (cuts.has(row)) return cuts.get(row)!;
+    if (project.wells.some((w) => w.row === row && w.role === 'ladder')) return Infinity; // its own ladder set none
+    // nearest row with a cut-off, shifted to this row's well line
+    const from = [...cuts.keys()].sort((a, b) => Math.abs(a - row) - Math.abs(b - row))[0];
+    return cuts.get(from)! + (project.rowTops[row - 1] ?? 0) - (project.rowTops[from - 1] ?? 0);
+  };
+  return bands.filter((b) => {
+    if (b.source === 'manual' || b.ladderSize !== undefined) return true;
+    return b.y <= cutFor(Number(b.laneKey.split('-')[0]));
+  });
 }
 
 /** Suggest ladder sizes for every ladder lane, leaving sizes the user picked alone. */

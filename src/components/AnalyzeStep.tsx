@@ -258,6 +258,10 @@ export function AnalyzeStep({ img, project, setProject, results, guided }: Props
           Sensitivity {sensitivity < 0.35 ? '(strong bands only)' : sensitivity > 0.7 ? '(includes faint bands)' : ''}
           <input type="range" min={0} max={1} step={0.05} value={sensitivity} onChange={(e) => setSensitivity(+e.target.value)} />
         </label>
+        <p className="muted small">
+          Bands below the ladder's smallest fragment are left out (usually the gel's edge or smudges). Click in a
+          lane to add one by hand if it's real.
+        </p>
         <label className="check">
           <input type="checkbox" checked={clickAdds} onChange={(e) => setClickAdds(e.target.checked)} />
           Clicking a lane adds a band
