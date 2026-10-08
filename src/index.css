@@ -55,6 +55,7 @@ select, input[type='number'], input:not([type]) {
 .row .field { flex: 1; min-width: 8rem; }
 .check { display: flex; gap: 0.4rem; align-items: center; margin: 0.5rem 0; font-size: 0.9rem; }
 input[type='range'] { width: 100%; }
+input[aria-invalid='true'] { border-color: #c0392b; outline-color: #c0392b; }
 
 /* layout */
 .app { min-height: 100vh; display: flex; flex-direction: column; }

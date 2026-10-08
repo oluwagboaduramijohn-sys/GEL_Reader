@@ -5,6 +5,7 @@ import { UNITS, type GelType, type Well, type WellRole } from '../data/types'
 import type { GrayImage } from '../lib/image'
 import { laneKey, makeWells, projectLadderId, rowCount, type Project } from '../lib/project'
 import { countWells } from '../lib/wellCount'
+import { WholeNumberInput } from './WholeNumberInput'
 
 interface Props {
   project: Project
@@ -48,7 +49,6 @@ export function WellsStep({ project, setProject, guided, clearGeometry, img, aut
 
   const setLayout = (rowWells: number[]) =>
     setProject((p) => clearGeometry({ ...p, rowWells, wells: makeWells(rowWells, p.wells, projectLadderId(p)) }))
-  const clampWells = (v: string) => Math.min(30, Math.max(1, Math.round(+v) || 1))
   const setRows = (n: number) =>
     setLayout(Array.from({ length: n }, (_, r) => project.rowWells[r] ?? project.rowWells[project.rowWells.length - 1]))
 
@@ -160,7 +160,7 @@ export function WellsStep({ project, setProject, guided, clearGeometry, img, aut
             {sameCount && (
               <label className="field">
                 Wells per row
-                <input type="number" min={1} max={30} value={project.rowWells[0]} onChange={(e) => setLayout(project.rowWells.map(() => clampWells(e.target.value)))} />
+                <WholeNumberInput min={1} max={30} value={project.rowWells[0]} onChange={(n) => setLayout(project.rowWells.map(() => n))} />
               </label>
             )}
           </div>
@@ -182,7 +182,7 @@ export function WellsStep({ project, setProject, guided, clearGeometry, img, aut
               {project.rowWells.map((n, r) => (
                 <label key={r} className="field">
                   Row {r + 1}
-                  <input type="number" min={1} max={30} value={n} onChange={(e) => setLayout(project.rowWells.map((m, i) => (i === r ? clampWells(e.target.value) : m)))} />
+                  <WholeNumberInput min={1} max={30} value={n} onChange={(v) => setLayout(project.rowWells.map((m, i) => (i === r ? v : m)))} />
                 </label>
               ))}
             </div>
