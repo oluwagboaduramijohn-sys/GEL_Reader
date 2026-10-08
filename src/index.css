@@ -149,6 +149,11 @@ text.halo { stroke: rgba(0, 0, 0, 0.85); stroke-width: 3px; paint-order: stroke;
 .status { display: flex; gap: 0.5rem; padding: 0.5rem; border-radius: 8px; margin-bottom: 0.4rem; font-size: 0.9rem; }
 .status.ok { background: #e8f5ec; }
 .status.bad { background: var(--warn-bg); color: var(--warn-ink); }
+.status button { margin-top: 0.35rem; }
+.stepper { margin-bottom: 0.3rem; }
+.stepper span { width: 3.2rem; font-size: 0.85rem; color: var(--muted); }
+.stepper strong { min-width: 1.8rem; text-align: center; }
+.stepper button { width: 2rem; padding: 0.2rem 0; }
 
 /* wells */
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-wrap: wrap; }

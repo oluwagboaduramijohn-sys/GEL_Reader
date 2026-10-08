@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { laddersFor } from '../data/ladders'
 import { UNITS } from '../data/types'
 import { autoLanes, detectBands, laneAt, manualBand, relabelLadders, rowSpan } from '../lib/detect'
 import { grayToRGBA, type GrayImage } from '../lib/image'
-import { formatSize, ladderFor, laneKey, rowCount, wellName, type BandResult, type LaneResult, type Project } from '../lib/project'
+import { formatSize, ladderFor, laneKey, makeWells, rowCount, wellName, type BandResult, type LaneResult, type Project } from '../lib/project'
 import { drawPixels } from '../lib/transform'
 import { svgPoint } from './svgPoint'
 
@@ -92,7 +93,7 @@ export function AnalyzeStep({ img, project, setProject, results, guided }: Props
     const p = svgPoint(e.currentTarget, e)
     if (drag.kind === 'lane') {
       const x = Math.min(W - 1, Math.max(0, p.x - drag.dx))
-      setProject((pr) => ({ ...pr, laneX: { ...pr.laneX, [drag.key]: x } }))
+      setProject((pr) => ({ ...pr, laneX: moveLane(pr, drag.key, x) }))
     } else if (drag.kind === 'row') {
       const y = Math.min(H - 10, Math.max(0, p.y))
       setProject((pr) => ({ ...pr, rowTops: pr.rowTops.map((t, i) => (i === drag.row - 1 ? y : t)) }))
@@ -242,7 +243,7 @@ export function AnalyzeStep({ img, project, setProject, results, guided }: Props
         </div>
         <p className="muted small">
           Click inside a lane to add a band · drag a band to move it · select a band and press Delete to remove it ·
-          drag the numbered circles to move lanes.
+          drag the numbered circles to move lanes (a row's first or last lane stretches the whole row).
         </p>
       </div>
 
@@ -261,6 +262,16 @@ export function AnalyzeStep({ img, project, setProject, results, guided }: Props
           <input type="checkbox" checked={clickAdds} onChange={(e) => setClickAdds(e.target.checked)} />
           Clicking a lane adds a band
         </label>
+        <h3>Wells per row</h3>
+        {project.rowWells.map((n, r) => (
+          <div key={r} className="row stepper">
+            {project.rowWells.length > 1 && <span>Row {r + 1}</span>}
+            <button aria-label={`Fewer wells in row ${r + 1}`} disabled={n <= 1} onClick={() => setProject((p) => changeWells(p, r, -1))}>−</button>
+            <strong>{n}</strong>
+            <button aria-label={`More wells in row ${r + 1}`} disabled={n >= 30} onClick={() => setProject((p) => changeWells(p, r, 1))}>+</button>
+          </div>
+        ))}
+        <p className="muted small">Lanes too far apart or too close? Change the count here, or drag a row's first or last lane to stretch it.</p>
         <div className="row">
           <button onClick={() => setProject((p) => ({ ...p, ...autoLanes({ ...p, rowTops: p.rowTops }, img) }))}>Re-fit lanes</button>
           <button onClick={() => setProject((p) => ({ ...p, bands: [] }))}>Remove all bands</button>
@@ -400,4 +411,32 @@ function HowTo() {
       </ol>
     </details>
   )
+}
+
+/**
+ * Move one lane. Dragging a row's first or last lane stretches the row: the
+ * lanes between are spread evenly, so two drags line up a whole comb.
+ */
+function moveLane(project: Project, key: string, x: number): Project['laneX'] {
+  const [row, index] = key.split('-').map(Number)
+  const count = project.rowWells[row - 1]
+  const laneX = { ...project.laneX, [key]: x }
+  if (count > 2 && (index === 1 || index === count)) {
+    const first = laneX[laneKey({ row, index: 1 })]
+    const last = laneX[laneKey({ row, index: count })]
+    for (let i = 2; i < count; i++) laneX[laneKey({ row, index: i })] = first + ((last - first) * (i - 1)) / (count - 1)
+  }
+  return laneX
+}
+
+/** Add or remove a well at the end of a row; lanes are re-fitted and bands cleared. */
+function changeWells(project: Project, row: number, delta: number): Project {
+  const rowWells = project.rowWells.map((n, r) => (r === row ? Math.min(30, Math.max(1, n + delta)) : n))
+  return {
+    ...project,
+    rowWells,
+    wells: makeWells(rowWells, project.wells, laddersFor(project.gelType)[0]?.id),
+    laneX: {},
+    bands: [],
+  }
 }

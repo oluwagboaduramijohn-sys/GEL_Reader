@@ -56,6 +56,8 @@ function App() {
   const [adjust, setAdjust] = useState<Adjust>(DEFAULT_ADJUST)
   const [project, setProject] = useState<Project>(() => newProject())
   const [guided, setGuided] = useState(true)
+  // a new photo or crop: the Wells step fills in the counted wells once
+  const [countPending, setCountPending] = useState(false)
 
   const rotated = useMemo(
     () => (source ? renderRotated(source.canvas, adjust) : null),
@@ -84,6 +86,7 @@ function App() {
     if (geometryChanges && project.bands.length + Object.keys(project.laneX).length > 0) {
       setProject(clearGeometry)
     }
+    if (geometryChanges) setCountPending(true)
     setAdjust((a) => {
       const next = { ...a, ...patch }
       // rotating changes the image size, so an old crop no longer fits
@@ -98,6 +101,7 @@ function App() {
     setSource({ ...loaded, name, autoChannel })
     setAdjust({ ...DEFAULT_ADJUST, invert: looksLightBackground(toGray(pixels, autoChannel)) })
     setProject((p) => clearGeometry(proj ?? p))
+    setCountPending(!proj) // the example comes with its own well map
     setStep('adjust')
   }
 
@@ -145,7 +149,15 @@ function App() {
           />
         )}
         {step === 'wells' && (
-          <WellsStep project={project} setProject={setProject} guided={guided} clearGeometry={clearGeometry} />
+          <WellsStep
+            project={project}
+            setProject={setProject}
+            guided={guided}
+            clearGeometry={clearGeometry}
+            img={analysisImg}
+            autoCount={countPending}
+            onAutoCounted={() => setCountPending(false)}
+          />
         )}
         {step === 'analyze' && analysisImg && (
           <AnalyzeStep img={analysisImg} project={project} setProject={setProject} results={results} guided={guided} />

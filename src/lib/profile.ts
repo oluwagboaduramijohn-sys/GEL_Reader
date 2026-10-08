@@ -167,18 +167,49 @@ export interface GridRow {
  * A ladder lane has many; a sample lane one or two, however bright. Used to
  * find the ladder when it is much fainter than overloaded PCR products.
  */
-export function bandCountProfile(img: GrayImage, y0: number, y1: number, step = 1): Float32Array {
+export function bandCountProfile(img: GrayImage, y0: number, y1: number): Float32Array {
   const out = new Float32Array(img.width);
   // one threshold for the whole row, so blank columns don't count their noise as bands
   const top = Math.max(0, Math.round(y0));
   const region = img.data.subarray(top * img.width, Math.min(img.height, Math.round(y1) + 1) * img.width);
   const sorted = Float32Array.from(region).sort();
-  const range = sorted[Math.floor(sorted.length * 0.995)] - sorted[Math.floor(sorted.length * 0.5)];
+  const threshold = (sorted[Math.floor(sorted.length * 0.995)] - sorted[Math.floor(sorted.length * 0.5)]) * 0.06;
+  // every few columns is plenty: lanes are many columns wide
+  const step = Math.max(1, Math.round(img.width / 400));
   for (let x = 0; x < img.width; x += step) {
-    const n = findPeaks(laneProfile(img, x, 1, y0, y1), { sensitivity: 0.5, minProminence: range * 0.06 }).length;
+    const raw = laneProfile(img, x, 1, y0, y1);
+    // as in findPeaks: also clear of this column's own noise and well above its background
+    const diffs = raw.subarray(1).map((v, i) => Math.abs(v - raw[i])).sort();
+    const noise = (1.4826 * (diffs[diffs.length >> 1] ?? 0)) / Math.SQRT2;
+    const smooth = gaussianSmooth(raw, 1.2);
+    const levels = Float32Array.from(smooth).sort();
+    const contrast = (levels[levels.length - 1] ?? 0) - (levels[levels.length >> 1] ?? 0);
+    const n = countRises(smooth, Math.max(threshold, noise * 3.5, contrast * 0.065));
     for (let i = x; i < Math.min(img.width, x + step); i++) out[i] = n;
   }
   return out;
+}
+
+/** Bands down a profile: rises of at least `t` that then fall by `t` again (one pass, with hysteresis). */
+function countRises(p: Float32Array, t: number) {
+  let count = 0;
+  let inBand = false;
+  let ref = p[0] ?? 0; // lowest point so far, or highest within a band
+  for (const v of p) {
+    if (!inBand) {
+      if (v < ref) ref = v;
+      else if (v - ref >= t) {
+        inBand = true;
+        ref = v;
+      }
+    } else if (v > ref) ref = v;
+    else if (ref - v >= t) {
+      count++;
+      inBand = false;
+      ref = v;
+    }
+  }
+  return count;
 }
 
 /**

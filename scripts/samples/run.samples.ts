@@ -14,6 +14,7 @@ import type { Well } from '../../src/data/types';
 import { autoLanes, detectBands } from '../../src/lib/detect';
 import { applyTone, bestChannel, looksLightBackground, toGray } from '../../src/lib/image';
 import { analyse, laneKey, newProject, type Project } from '../../src/lib/project';
+import { countWells } from '../../src/lib/wellCount';
 
 interface Case {
   id: string;
@@ -76,6 +77,12 @@ function run(c: Case, wellLines: 'auto' | 'given') {
   project = { ...project, ...autoLanes(project, img) };
   project = { ...project, bands: detectBands(project, img, 0.5) };
   const results = analyse(project);
+  const counted = countWells(
+    img,
+    c.rowWells.length,
+    wellLines === 'given' ? project.rowTops : undefined,
+    c.ladderWells.map((l) => l.includes(1)),
+  );
 
   return {
     id: c.id,
@@ -86,6 +93,7 @@ function run(c: Case, wellLines: 'auto' | 'given') {
     crop: { x, y, w, h },
     rotatedWidth: rotated.width,
     rowTops: project.rowTops,
+    counted,
     laneHalfWidth: project.laneHalfWidth,
     lanes: results.map((r) => ({
       key: r.key,
@@ -128,8 +136,14 @@ it('runs the pipeline on every sample gel', () => {
       const labelled = ladders.map((l) => `${l.key}:${l.bands.filter((b) => b.ladderSize).length}/${l.bands.length}`);
       const samples = out.lanes.filter((l) => l.role === 'sample' && l.bands.length);
       const matched = samples.filter((l) => l.bands.some((b) => b.matchesExpected)).length;
+      // detected well count vs the wells really used, and where well 1 lands (in lanes)
+      const counts = out.counted.map((k, r) => {
+        const used = c.wellsUsed?.[r] ?? c.rowWells[r];
+        const off = c.ladderX ? ((k.first + out.crop.x - c.ladderX[r] * out.rotatedWidth) / k.spacing).toFixed(1) : '?';
+        return `${k.count}/${used}@${off}`;
+      });
       summary.push(
-        `${c.id.padEnd(10)} ${mode.padEnd(5)} ladder lane off by ${laneErr.join(' ')} | ladder bands labelled ${labelled.join(' ')} | ` +
+        `${c.id.padEnd(10)} ${mode.padEnd(5)} wells found ${counts.join(' ')} | ladder lane off by ${laneErr.join(' ')} | ladder bands labelled ${labelled.join(' ')} | ` +
           `samples with bands ${samples.length}, matching expected ${c.expected ? matched : '-'}`,
       );
     }

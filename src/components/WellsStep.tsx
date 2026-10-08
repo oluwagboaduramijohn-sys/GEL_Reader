@@ -1,15 +1,22 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { DEFAULT_GEL_PERCENT, GEL_PERCENT_OPTIONS, resolvingRange, suggestPercent } from '../data/gelRanges'
 import { laddersFor } from '../data/ladders'
 import { UNITS, type GelType, type Well, type WellRole } from '../data/types'
+import type { GrayImage } from '../lib/image'
 import { laneKey, makeWells, rowCount, type Project } from '../lib/project'
+import { countWells } from '../lib/wellCount'
 
 interface Props {
   project: Project
   setProject: (fn: (p: Project) => Project) => void
   guided: boolean
   clearGeometry: (p: Project) => Project
+  img: GrayImage | null // the cropped photo, for counting wells
+  autoCount: boolean // a new photo: fill in the counted wells once
+  onAutoCounted: () => void
 }
+
+const UNSURE = 0.2 // below this, the row didn't repeat clearly: ask the user to check
 
 const ROLE_LABEL: Record<WellRole, string> = { ladder: 'Ladder', sample: 'Sample', control: 'Control', empty: 'Empty' }
 const GEL_LABEL: Record<GelType, string> = { dna: 'DNA', rna: 'RNA', protein: 'Protein (SDS-PAGE)' }
@@ -21,7 +28,7 @@ function parseSizes(text: string): number[] {
     .filter((n) => Number.isFinite(n) && n > 0)
 }
 
-export function WellsStep({ project, setProject, guided, clearGeometry }: Props) {
+export function WellsStep({ project, setProject, guided, clearGeometry, img, autoCount, onAutoCounted }: Props) {
   const [selected, setSelected] = useState(laneKey(project.wells[0] ?? { row: 1, index: 1 }))
   const unit = UNITS[project.gelType]
   const ladders = laddersFor(project.gelType)
@@ -44,6 +51,33 @@ export function WellsStep({ project, setProject, guided, clearGeometry }: Props)
   const clampWells = (v: string) => Math.min(30, Math.max(1, Math.round(+v) || 1))
   const setRows = (n: number) =>
     setLayout(Array.from({ length: n }, (_, r) => project.rowWells[r] ?? project.rowWells[project.rowWells.length - 1]))
+
+  // count the wells in each row from the photo
+  const ladderFirst = Array.from({ length: rows }, (_, r) =>
+    project.wells.some((w) => w.row === r + 1 && w.index === 1 && w.role === 'ladder'),
+  )
+  const ladderKey = ladderFirst.join()
+  const topsKey = project.rowTops.join()
+  const counted = useMemo(
+    () => (img ? countWells(img, rows, project.rowTops.length === rows ? project.rowTops : undefined, ladderFirst) : null),
+    // keys stand in for the arrays, which are rebuilt every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [img, rows, topsKey, ladderKey],
+  )
+  const suggested = counted && counted.every((c) => c.count >= 2) ? counted.map((c) => c.count) : null
+  const unsureRows = counted?.flatMap((c, r) => (c.confidence < UNSURE ? [r + 1] : [])) ?? []
+  const differs = !!suggested && suggested.some((n, r) => n !== project.rowWells[r])
+  const applySuggested = () => {
+    if (!suggested) return
+    setSameCount(suggested.every((n) => n === suggested[0]))
+    setLayout(suggested)
+  }
+  useEffect(() => {
+    if (!autoCount || !counted) return
+    if (suggested) applySuggested()
+    onAutoCounted()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoCount, counted])
 
   const setGelType = (gelType: GelType) =>
     setProject((p) => ({
@@ -137,6 +171,26 @@ export function WellsStep({ project, setProject, guided, clearGeometry }: Props)
                   <input type="number" min={1} max={30} value={n} onChange={(e) => setLayout(project.rowWells.map((m, i) => (i === r ? clampWells(e.target.value) : m)))} />
                 </label>
               ))}
+            </div>
+          )}
+          {suggested && (
+            <div className={`status ${unsureRows.length ? 'bad' : 'ok'}`}>
+              <span aria-hidden>{unsureRows.length ? '?' : '✓'}</span>
+              <div>
+                Counted from the photo:{' '}
+                {suggested.map((n, r) => (rows > 1 ? `row ${r + 1}: ${n}` : `${n}`)).join(' · ')} wells
+                {unsureRows.length > 0 && (
+                  <div className="small">
+                    Not sure about {unsureRows.length === rows ? 'this count' : `row ${unsureRows.join(', ')}`}: please check against the photo.
+                  </div>
+                )}
+                {differs && (
+                  <div>
+                    <button onClick={applySuggested}>Use these counts</button>
+                  </div>
+                )}
+                <div className="small muted">Empty wells at the end of a row can't be seen, but they don't change the well numbers.</div>
+              </div>
             </div>
           )}
           {rows > 1 && guided && (
