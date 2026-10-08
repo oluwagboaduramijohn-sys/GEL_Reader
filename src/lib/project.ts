@@ -57,6 +57,18 @@ export function newProject(gelType: GelType = 'dna'): Project {
   };
 }
 
+/**
+ * The ladder this gel uses: the one already chosen for its first ladder well,
+ * else the first ladder for the gel type. New ladder wells (an added row, a
+ * changed well count) take this, so they match what the user picked.
+ */
+export function projectLadderId(project: Pick<Project, 'gelType' | 'wells'>): string | undefined {
+  const chosen = [...project.wells]
+    .sort((a, b) => a.row - b.row || a.index - b.index)
+    .find((w) => w.role === 'ladder' && w.ladderId)?.ladderId;
+  return chosen ?? LADDERS.find((l) => l.gelType === project.gelType)?.id;
+}
+
 export function ladderFor(well: Well): Ladder | undefined {
   return LADDERS.find((l) => l.id === well.ladderId);
 }

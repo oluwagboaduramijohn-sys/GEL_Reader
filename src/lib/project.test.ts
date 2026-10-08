@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { analyse, makeWells, newProject, type Band, type Project } from './project';
+import { analyse, makeWells, newProject, projectLadderId, type Band, type Project } from './project';
 
 // ideal semi-log gel: y = 400 - 100 * log10(size)
 const yOf = (size: number) => 400 - 100 * Math.log10(size);
@@ -53,5 +53,19 @@ describe('analyse', () => {
     const lane = analyse(p)[1];
     expect(lane.bands[0].estimate).toBeUndefined();
     expect(lane.error).toMatch(/ladder/i);
+  });
+});
+
+describe('the ladder a gel uses', () => {
+  it('gives new ladder wells the ladder already chosen, not the first in the list', () => {
+    // one row set up with the NEB 100 bp ladder, then a second row added
+    const p = { ...newProject('dna'), rowWells: [15], wells: makeWells([15], [], 'neb-100bp') };
+    const wells = makeWells([15, 20], p.wells, projectLadderId(p));
+    expect(wells.find((w) => w.row === 2 && w.index === 1)?.ladderId).toBe('neb-100bp');
+  });
+
+  it('falls back to the first ladder for the gel type when none is set', () => {
+    const p = { ...newProject('dna'), wells: makeWells([4]).map((w) => ({ ...w, role: 'sample' as const })) };
+    expect(projectLadderId(p)).toBe('neb-1kb');
   });
 });

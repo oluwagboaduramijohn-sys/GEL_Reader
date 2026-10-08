@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { laddersFor } from '../data/ladders'
 import { UNITS } from '../data/types'
 import { autoLanes, detectBands, laneAt, manualBand, relabelLadders, rowSpan } from '../lib/detect'
 import { grayToRGBA, type GrayImage } from '../lib/image'
-import { formatSize, ladderFor, laneKey, makeWells, rowCount, wellName, type BandResult, type LaneResult, type Project } from '../lib/project'
+import { formatSize, ladderFor, laneKey, makeWells, projectLadderId, rowCount, wellName, type BandResult, type LaneResult, type Project } from '../lib/project'
 import { drawPixels } from '../lib/transform'
 import { svgPoint } from './svgPoint'
 
@@ -446,7 +445,7 @@ function changeWells(project: Project, row: number, delta: number): Project {
   return {
     ...project,
     rowWells,
-    wells: makeWells(rowWells, project.wells, laddersFor(project.gelType)[0]?.id),
+    wells: makeWells(rowWells, project.wells, projectLadderId(project)),
     laneX: {},
     bands: [],
   }

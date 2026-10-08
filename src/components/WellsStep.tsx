@@ -3,7 +3,7 @@ import { DEFAULT_GEL_PERCENT, GEL_PERCENT_OPTIONS, resolvingRange, suggestPercen
 import { laddersFor } from '../data/ladders'
 import { UNITS, type GelType, type Well, type WellRole } from '../data/types'
 import type { GrayImage } from '../lib/image'
-import { laneKey, makeWells, rowCount, type Project } from '../lib/project'
+import { laneKey, makeWells, projectLadderId, rowCount, type Project } from '../lib/project'
 import { countWells } from '../lib/wellCount'
 
 interface Props {
@@ -47,7 +47,7 @@ export function WellsStep({ project, setProject, guided, clearGeometry, img, aut
   const [sameCount, setSameCount] = useState(project.rowWells.every((n) => n === project.rowWells[0]))
 
   const setLayout = (rowWells: number[]) =>
-    setProject((p) => clearGeometry({ ...p, rowWells, wells: makeWells(rowWells, p.wells, laddersFor(p.gelType)[0]?.id) }))
+    setProject((p) => clearGeometry({ ...p, rowWells, wells: makeWells(rowWells, p.wells, projectLadderId(p)) }))
   const clampWells = (v: string) => Math.min(30, Math.max(1, Math.round(+v) || 1))
   const setRows = (n: number) =>
     setLayout(Array.from({ length: n }, (_, r) => project.rowWells[r] ?? project.rowWells[project.rowWells.length - 1]))
@@ -88,9 +88,23 @@ export function WellsStep({ project, setProject, guided, clearGeometry, img, aut
       bands: p.bands.map((b) => ({ ...b, ladderSize: undefined })),
     }))
 
-  // a ladder well with no ladder chosen yet gets the first one for this gel type
+  // most gels use one ladder throughout, so choosing it once sets every ladder well
+  const [sameLadder, setSameLadder] = useState(true)
+  const chooseLadder = (ladderId: string) => {
+    if (!sameLadder) return updateWell(selected, { ladderId })
+    setProject((p) => {
+      const keys = new Set(p.wells.filter((w) => w.role === 'ladder' || laneKey(w) === selected).map(laneKey))
+      return {
+        ...p,
+        wells: p.wells.map((w) => (keys.has(laneKey(w)) ? { ...w, ladderId } : w)),
+        bands: p.bands.map((b) => (keys.has(b.laneKey) ? { ...b, ladderSize: undefined } : b)),
+      }
+    })
+  }
+
+  // a ladder well with no ladder chosen yet gets the one the gel already uses
   const roleChange = (w: Well, role: WellRole) =>
-    updateWell(laneKey(w), { role, ladderId: role === 'ladder' ? (w.ladderId ?? ladders[0]?.id) : w.ladderId })
+    updateWell(laneKey(w), { role, ladderId: role === 'ladder' ? (w.ladderId ?? projectLadderId(project)) : w.ladderId })
 
   return (
     <section className="panel">
@@ -228,7 +242,7 @@ export function WellsStep({ project, setProject, guided, clearGeometry, img, aut
       ))}
       <div className="legend small muted">L = ladder · S = sample · C = control · — = empty</div>
 
-      <QuickSetup project={project} setProject={setProject} ladderId={ladders[0]?.id} unit={unit} />
+      <QuickSetup project={project} setProject={setProject} ladderId={projectLadderId(project)} unit={unit} />
 
       {well && (
         <div className="welledit">
@@ -246,7 +260,7 @@ export function WellsStep({ project, setProject, guided, clearGeometry, img, aut
           {well.role === 'ladder' && (
             <label className="field">
               Which ladder?
-              <select value={well.ladderId ?? ''} onChange={(e) => updateWell(selected, { ladderId: e.target.value })}>
+              <select value={well.ladderId ?? ''} onChange={(e) => chooseLadder(e.target.value)}>
                 {ladders.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.manufacturer} {l.name}
@@ -254,6 +268,12 @@ export function WellsStep({ project, setProject, guided, clearGeometry, img, aut
                   </option>
                 ))}
               </select>
+            </label>
+          )}
+          {well.role === 'ladder' && project.wells.filter((w) => w.role === 'ladder').length > 1 && (
+            <label className="check">
+              <input type="checkbox" checked={sameLadder} onChange={(e) => setSameLadder(e.target.checked)} />
+              Use this ladder in every ladder well
             </label>
           )}
           {well.role === 'ladder' && well.ladderId && (
