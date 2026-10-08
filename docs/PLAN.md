@@ -32,7 +32,8 @@ calibrate against the ladder → sizes, panel calls and export
 
 ## Open items
 
-- [ ] Add TransGen 50 bp ladder (band list pending from lab).
+- [x] Add the lab's ladders: TransGen 100bp Plus II (BM321) and NEB Quick-Load Purple 50 bp (N0556); the 50 bp ladder is NEB's, not TransGen's.
+- [ ] Check NEB Quick-Load Purple 50 bp (N0556) against its own datasheet; currently from N3236.
 - [x] Verify the preinstalled ladders (`src/data/ladders.ts`) against manufacturer datasheets and add ng per band (6 Oct 2026). Fixed NEB ssRNA Ladder sizes; added reference bands.
 - [ ] Check NEB Quick-Load 1 kb (N0468) and 100 bp (N0467) against their own datasheets (neb.com blocks automated fetching); currently copied from N3232/N3231.
 - [ ] Collect test photos in `sample-gels/`, each with a note on gel type, ladder and well contents.

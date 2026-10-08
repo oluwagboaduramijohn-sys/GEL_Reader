@@ -14,8 +14,9 @@ describe('ladder library', () => {
   });
 
   // catches typos when copying ng values off a datasheet
-  it.each(LADDERS.filter((l) => l.massLoad?.startsWith('0.5 µg')))('$id band masses add up to 0.5 µg', (ladder) => {
+  const loadNg = (l: (typeof LADDERS)[number]) => Number(l.massLoad?.match(/^([\d.]+) µg/)?.[1]) * 1000;
+  it.each(LADDERS.filter((l) => loadNg(l) > 0))('$id band masses add up to $massLoad', (ladder) => {
     const total = ladder.bands.reduce((sum, b) => sum + (b.massNg ?? NaN), 0);
-    expect(Math.abs(total - 500)).toBeLessThanOrEqual(5);
+    expect(Math.abs(total - loadNg(ladder)) / loadNg(ladder)).toBeLessThanOrEqual(0.01);
   });
 });

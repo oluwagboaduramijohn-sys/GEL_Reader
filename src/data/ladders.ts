@@ -27,6 +27,13 @@ const NEB_100BP = bands(
   [600, 18], [500, 97, '*'], [400, 38], [300, 29], [200, 25], [100, 48],
 );
 
+// NEB 50 bp datasheet (N3236), masses for a 1 µg load
+const NEB_50BP = bands(
+  [1350, 103], [916, 70], [766, 58], [700, 54], [650, 50], [600, 46], [550, 42],
+  [500, 76, '*'], [450, 34], [400, 31], [350, 27], [300, 46], [250, 57],
+  [200, 107, '*'], [150, 46], [100, 69], [50, 84],
+);
+
 export const LADDERS: Ladder[] = [
   // ---- DNA ----
   {
@@ -86,6 +93,34 @@ export const LADDERS: Ladder[] = [
     ),
     massLoad: '5 µL',
     verified: true,
+  },
+  {
+    id: 'transgen-100bp-plus-ii',
+    name: '100bp Plus II DNA Ladder',
+    manufacturer: 'TransGen Biotech',
+    catalogNumber: 'BM321',
+    gelType: 'dna',
+    // TransGen BM321 manual: 500 bp is 100 ng/5 µL, double the others; at
+    // 0.15 mg/mL (750 ng/5 µL) that leaves 50 ng for each other band
+    bands: bands(
+      [5000, 50], [3000, 50], [2000, 50], [1500, 50], [1000, 50], [900, 50], [800, 50],
+      [700, 50], [600, 50], [500, 100, '*'], [400, 50], [300, 50], [200, 50], [100, 50],
+    ),
+    massLoad: '5 µL',
+    verified: true,
+  },
+  {
+    id: 'neb-quickload-purple-50bp',
+    name: 'Quick-Load Purple 50 bp DNA Ladder',
+    manufacturer: 'NEB',
+    catalogNumber: 'N0556',
+    gelType: 'dna',
+    // NEB lists the same 17 bands (50-1,350 bp, 200 and 500 bp brighter) as
+    // the 50 bp DNA Ladder N3236; masses from N3236's datasheet. NEB's site
+    // blocked fetching N0556's own datasheet. Load 5-10 µL (0.5-1 µg).
+    bands: NEB_50BP,
+    massLoad: '1 µg',
+    verified: false,
   },
   {
     id: 'generuler-1kb',
