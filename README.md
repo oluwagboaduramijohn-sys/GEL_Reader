@@ -12,6 +12,14 @@ npm test        # run unit tests
 npm run build   # type-check and build
 ```
 
+## Hosting
+
+The app is a static site: all image processing happens in the browser, so
+gel photos never leave the user's computer. Every push to `main` runs the
+tests, builds the app and publishes it to GitHub Pages
+(`.github/workflows/deploy.yml`). One-time setup on GitHub: Settings →
+Pages → Source: "GitHub Actions".
+
 ## Testing on real gel photos
 
 The photos in `sample-gels/` stay out of git (study data), and so does
